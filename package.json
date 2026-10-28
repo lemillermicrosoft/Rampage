@@ -1,0 +1,14 @@
+{
+  "name": "toast-rampage-dev-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Development-only Lua parser and headless tests; not loaded by WoW",
+  "scripts": {
+    "test": "node tests/run.cjs",
+    "check:lua51": "node tests/run.cjs --parse-only"
+  },
+  "devDependencies": {
+    "fengari": "0.1.5",
+    "luaparse": "0.3.1"
+  }
+}
