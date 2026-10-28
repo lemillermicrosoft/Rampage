@@ -1,0 +1,9 @@
+## Interface: 20506
+## Title: Rampage
+## Notes: Cooperative city-smashing for Toast. Just FOUR MORE BOSSES!
+## Author: GitHub Copilot c/o deehoc
+## Version: 0.1.0
+## IconTexture: Interface\AddOns\Rampage\Media\icon.png
+## SavedVariables: RampageDB
+
+Rampage.lua
