@@ -10,9 +10,9 @@ Headless execution: Node v24.18.0, Fengari0.1.5 (**Lua5.3 semantics**); separate
 
 ## Executed checks
 
-- `npm test`: **55/55 passed** — **14 model +23 protocol +18 WoW/UI/input/audio** checks.
+- Pre-correction integrated baseline: `npm test` **55/55**. Current release adds one actual-TOC control-persistence regression: **56 checks** (14 model +23 protocol +19 WoW/UI/input/audio); the existing release gate reruns the full exact version-bumped runtime before publication.
 - `npm run check:lua51`: **9/9 files parsed** (six actual TOC runtime modules, three Lua test suites).
-- `node tests/run.cjs --suite=wow`: **18/18** after integration corrections.
+- `node tests/run.cjs --suite=wow`: **19/19** with the requested control-persistence correction.
 - `npm audit --audit-level=moderate`: **zero vulnerabilities**; no dependency changes.
 - `git diff --check`: clean. No workflow, release script, CurseForge config or installed-skill changes.
 - `node tests/ui-preview.cjs --scene brawl|hazard|ko ...`: exports the actual UI.lua geometry via mocks. Rasterized review PNGs and inspected Brawl/AI, warning and KO scenes; regenerated raid/solo fixtures. **These are mock layouts, not WoW screenshots.**
@@ -58,12 +58,13 @@ Every emitted broadcast independently reaches every other node through the simul
 
 Hard budgets unchanged:8msgs/s,700chargedB/s,burst10/1,000 (16-byte allowance/message), queue128, three assemblies×three fragments,6s expiry. Complete worlds every **1.25s (0.8Hz)**; names/roles carousel one record/second. Join timeout90s, world timeout20s, guest removal35s. The seven-second warning exceeds the tested worst world gap, but **delay/loss outside the fixture can still hide a warning**. Remote countdowns are authoritative snapshot samples, not perfect clock synchronization; dodge early. No prediction or competitive PvP fairness claim.
 
-## Actual UI/input/audio mock coverage (18 tests)
+## Actual UI/input/audio mock coverage (19 tests)
 
 Full TOC loading; saved variables; solo/mouse fallback; explicit capture and all mapped keys consumed; held-repeat bounds; unknown/chat/edit-focus/Escape/Alt/Ctrl/Meta/hide/leave/combat/world departure/missed-key-up safety; no restricted propagation mutation in combat; no permanent/override binding or public chat calls.
 
 New checks exercise:
 - ASCII fallback labels and visible reopen text instead of stale Window hidden.
+- User's pre-publication correction: preserve chosen keyboard/mouse mode across clear/intermission and real model next-stage advance. Capture eligibility is separate from action eligibility. Gameplay inputs remain consumed but inactive during transition, old held/OS-repeat actions blocked until key-up, fresh actions work next stage. Escape, close, combat, chat, unknown shortcut and focus-loss during intermission cancel capture and never regrab next stage. KO/victory release behavior unchanged.
 - Button hover/pressed/disabled/selected states.
 - Mode setup, explicit JOIN BRAWL and spectator-to-player consent; generic chat commands do not auto-consent.
 - Host/solo AI controls, five-bot/25-actor cap, distinct bot names/labels/hover chips and no fake roster.

@@ -170,6 +170,42 @@ function runWoWSmoke()
         click(ui.capture); f.scripts.OnKeyDown(f,"ESCAPE"); assert(not input.focused); eq(f.propagate,true)
         app.net.action=action
     end)
+    check("WoW mock: chosen controls persist across cities without held replay or safety recapture", function()
+        local net,input=app.net,app.input; local f=input.frame
+        local oldState,oldAction=net.state,net.action
+        local calls=0; net.action=function() calls=calls+1; return true end
+        local function fresh(capture)
+            input:release(); net.state=Addon.Model.new(); Addon.Model.addPlayer(net.state,1); Addon.Model.start(net.state)
+            if capture then assert(input:grab()) end
+        end
+        local function clear()
+            net.state.phase,net.state.wait="clear",0.2
+            net:notice(); input:update(0.01)
+        end
+        local function nextCity()
+            Addon.Model.tick(net.state,0.2); net:notice(); input:update(0.01)
+            eq(net.state.stage,2); eq(net.state.phase,"play")
+        end
+        fresh(true); f.scripts.OnKeyDown(f,"D"); local before=calls
+        clear(); assert(input.focused and f:IsShown()); assert(not input:canPlay()); assert(next(input.held)==nil)
+        f.scripts.OnKeyDown(f,"D"); f.scripts.OnKeyDown(f,"SPACE"); eq(f.propagate,false); eq(calls,before)
+        nextCity(); assert(input.focused); eq(calls,before)
+        f.scripts.OnKeyDown(f,"D"); f.scripts.OnKeyDown(f,"SPACE"); eq(calls,before) -- OS repeat blocked until key-up
+        f.scripts.OnKeyUp(f,"D"); f.scripts.OnKeyUp(f,"SPACE"); eq(f.propagate,false)
+        f.scripts.OnKeyDown(f,"D"); eq(calls,before+1); f.scripts.OnKeyUp(f,"D")
+        fresh(false); clear(); nextCity(); assert(not input.focused) -- mouse selection stays mouse
+        for _,reason in ipairs({"escape","close","combat","chat","shortcut","focus"}) do
+            fresh(true); clear(); assert(input.focused)
+            if reason=="escape" then f.scripts.OnKeyDown(f,"ESCAPE")
+            elseif reason=="close" then ui.root:Hide(); ui.root:Show()
+            elseif reason=="combat" then combat=true; event("PLAYER_REGEN_DISABLED"); combat=false; event("PLAYER_REGEN_ENABLED")
+            elseif reason=="chat" then editFocus={}; input:update(0.01); editFocus=nil
+            elseif reason=="shortcut" then f.scripts.OnKeyDown(f,"I")
+            else windowFocus=false; input:update(0.01); windowFocus=true end
+            assert(not input.focused,reason); nextCity(); assert(not input.focused,reason.." recaptured")
+        end
+        input:release(); net.state,net.action=oldState,oldAction
+    end)
     check("WoW mock: keyboard alt-tab, long stall, hidden, leaving-world and spectator release", function()
         local input=app.input; local f=input.frame
         assert(input:grab()); f.scripts.OnKeyDown(f,"SPACE"); windowFocus=false; step(0.05)

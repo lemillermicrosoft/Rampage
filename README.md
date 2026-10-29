@@ -54,7 +54,7 @@ The UI only displays authoritative threats; it never applies damage locally. Sev
 
 ## Raid controls and protection
 
-Keyboard capture is explicit and visible, only for an active, healthy monster. Unknown keys/chat shortcuts, edit focus, Escape, hide, Leave, combat, modifier shortcuts, physical missed-key-up reconciliation and long interruptions release it. **No permanent/override keybindings or protected spell actions.** Mouse fallback uses font-safe **A/Left, W/Up, SPACE, S/Down, D/Right** labels. Reopening no longer displays the stale “Window hidden” reason.
+Keyboard capture is explicit and visible, only for an active, healthy monster. **Your chosen keyboard or mouse control mode persists across ordinary stage/intermission transitions.** Captured keys remain routed to Rampage while gameplay is paused between cities; held actions are cleared and require key-up/fresh key-down in the next city. Escape/close and safety releases still cancel capture, with no automatic recapture. Unknown keys/chat shortcuts, edit focus, Escape, hide, Leave, combat, modifier shortcuts, physical missed-key-up reconciliation and long interruptions release it. **No permanent/override keybindings or protected spell actions.** Mouse fallback uses font-safe **A/Left, W/Up, SPACE, S/Down, D/Right** labels. Reopening no longer displays the stale “Window hidden” reason.
 
 Host WoW combat freezes the game clock, AI, hazards, HP/KO/immunity and transitions. A guest in real WoW combat receives damage/action protection via a versioned notification **or** the host's read-only `UnitAffectingCombat` roster check. The fallback is applied before the hazard/AI tick. Unresponsive guests are protected after 12s and removed after 35s. Detection/notification still has an inherent delay; unavailable status cannot be known before evidence arrives. This is friendly protection, not exploit-proof PvP.
 
@@ -89,6 +89,6 @@ node tests/run.cjs --suite=wow
 node tests/ui-preview.cjs --scene brawl --output docs/previews/brawl-mock.svg
 ```
 
-**55 tests**: 14 model, 23 protocol, 18 WoW/UI/input/audio mocks. **9 Lua files** parse as Lua5.1 grammar; **Fengari executes Lua5.3 semantics**, not native WoW Lua. A single AI clears all four bosses in 108.8 simulated game seconds; separate fixtures prove real AI harm/KO. Source-derived mock previews are labelled **not WoW screenshots**. See [QA.md](QA.md) for what was actually checked and remaining native tests.
+**56 tests**: 14 model, 23 protocol, 19 WoW/UI/input/audio mocks. **9 Lua files** parse as Lua5.1 grammar; **Fengari executes Lua5.3 semantics**, not native WoW Lua. A single AI clears all four bosses in 108.8 simulated game seconds; separate fixtures prove real AI harm/KO. Source-derived mock previews are labelled **not WoW screenshots**. See [QA.md](QA.md) for what was actually checked and remaining native tests.
 
 Repository: https://github.com/lemillermicrosoft/Rampage

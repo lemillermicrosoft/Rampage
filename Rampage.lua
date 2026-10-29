@@ -78,7 +78,10 @@ local function initialize()
         end,
         changed = function()
             app.persist()
-            if app.input and not app.input:canPlay() then app.input:release("Game changed — keys released") end
+            if app.input then
+                if not app.input:canCapture() then app.input:release("Game changed — keys released")
+                else app.input:syncPhase() end
+            end
             if app.sound then app.sound:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
         end })
     app.sound = addon.Sound.create(app)
