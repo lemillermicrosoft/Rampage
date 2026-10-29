@@ -12,6 +12,8 @@ Development stayed isolated until approval. Publication updates the primary link
 
 Pre-publication review also fixed a narrow presentation edge: an unrendered stale sample can no longer trigger late confirmed-impact residue when the next world arrives. Previous sample age is checked before replacing its timestamp, retaining timely confirmation and the exact2.5s boundary.
 
+The requested building detail is restored too: clear lit panes, crossbars, sills, roof trim and facade brick seams. Explicit texture layers/sublevels keep walls behind panes and trim in the native renderer; damaged windows remain visible rather than nearly disappearing. This preserves the earlier warm building style, not new level themes.
+
 ## Try the new fun in one minute
 
 1. Install the **same new versioned R4 release** on both machines, then safely `/reload` when you choose. Preserve v0.3.0 for rollback. The owner's existing junction already points at the primary checkout that publication updates; do not extract over that junction or switch it to the development worktree.
@@ -71,7 +73,7 @@ Combat hides the window. Returning can restore the previous window but never rec
 
 **Local BM** remains **OFF by default**, plus independent **Mute Rampage**. It uses separately installed `BlasterMaster_GetSfxPath` mappings (`crit`, `combatStart`, `levelUp`), honors None/mute/provider variants, checks playback success, and never copies sound files or changes global volume. Local hurt cues are rare/throttled; spectators hear only major transitions. No 25-monster network sound chorus or catch-up burst.
 
-Original warm city and creatures show HP, hurt flashes, immunity, KO countdowns and AI/KO labels. Seven fixed lane markers,72 pooled particles and48 boss-cue textures handle warnings/attacks/destruction. Buttons retain hover/pressed/disabled/selected states. The900×660 window fits down to available space. Pools remain **105 frames /1,404 textures /97 fonts** after exactly500 animated25-actor renders; this is bounded WoW-object evidence, not zero Lua allocations or native frame-time proof.
+Original warm city and creatures show HP, hurt flashes, immunity, KO countdowns and AI/KO labels. Seven fixed lane markers,72 pooled particles and48 boss-cue textures handle warnings/attacks/destruction. Buttons retain hover/pressed/disabled/selected states. The900×660 window fits down to available space. Pools remain **105 frames /1,521 textures /97 fonts** after exactly500 animated25-actor renders; this is bounded WoW-object evidence, not zero Lua allocations or native frame-time proof.
 
 ## Network and limitations
 
@@ -98,6 +100,6 @@ node tests/ui-preview.cjs --scene boss-windup --output docs/previews/boss-windup
 node tests/ui-preview.cjs --scene boss-impact --output docs/previews/boss-impact-mock.svg
 ```
 
-**73 tests**:22 model,26 protocol,25 actual-TOC WoW/UI/input/audio mocks, retaining the stage-transition control-persistence regression. **9 Lua files** parse as Lua5.1 grammar; **Fengari executes Lua5.3 semantics**, not native WoW Lua. Single AI clears four moving bosses in100.8 simulated seconds; five AI in50.8s Co-op/85.2s Brawl; separate fixtures prove AI harm/KO. Source-derived mock previews are labelled **not WoW screenshots**. See [QA.md](QA.md) for what was actually checked and remaining native tests.
+**74 tests**:22 model,26 protocol,26 actual-TOC WoW/UI/input/audio mocks, retaining the stage-transition control-persistence regression. **9 Lua files** parse as Lua5.1 grammar; **Fengari executes Lua5.3 semantics**, not native WoW Lua. Single AI clears four moving bosses in100.8 simulated seconds; five AI in50.8s Co-op/85.2s Brawl; separate fixtures prove AI harm/KO. Source-derived mock previews are labelled **not WoW screenshots**. See [QA.md](QA.md) for what was actually checked and remaining native tests.
 
 Repository: https://github.com/lemillermicrosoft/Rampage

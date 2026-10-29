@@ -19,6 +19,10 @@ The owner's existing linked checkout is advanced to this approved release and le
 - Visible moving shield, patrol/windup/release/recovery poses and pooled original throw/beam/stomp/barrage cues show the actual attack origin. Clients never apply damage from animation.
 - Clients smooth only the known patrol segment, stopping at its endpoint and freezing when paused/stale. No future route/attack prediction. A timely confirmed recovery may show short static impact residue at already-known targets, never a late projectile or damage replay.
 
+### Building details restored
+
+The earlier warm building detail is back: bright multi-pane windows, crossbars, sills, roof/cornice trim and subtle brick seams. Explicit draw layers keep walls behind panes/trim instead of relying on creation order, and damaged floors keep readable lit windows instead of fading them almost away. This is a bounded visual restoration, not new level themes or gameplay.
+
 ### Review fix included
 
 An old warning sample could become stale while no frames rendered, then incorrectly show confirmed-impact residue when a delayed consecutive recovery arrived. The UI now checks **previous sample age before replacing its timestamp**, even without an intermediate render. More than2.5s suppresses late residue and clears the stale visual baseline; normal timely confirmation and the exact2.5s boundary remain unchanged. This is presentation-only; no gameplay/schema/latency change.
@@ -34,6 +38,6 @@ An old warning sample could become stale while no frames rendered, then incorrec
 
 `/rampage solo` →Add AI→PLAY. Watch a full patrol/windup/attack/recovery cycle, flatten the city, then chase the moving boss and hit inside its bracket. Start with two clients on the same release in one PARTY/RAID before scaling.
 
-**73 automated checks** (22 model,26 protocol,25 actual-TOC WoW/UI/input/audio mocks),9 Lua5.1 grammar checks and zero dependency audit findings. The new no-intermediate-render regression was demonstrated failing before the fix and passing afterward. Independent baseline review also exercised28,000 off-grid world round trips. Execution uses Fengari Lua5.3 semantics, not native WoW.
+**74 automated checks** (22 model,26 protocol,26 actual-TOC WoW/UI/input/audio mocks),9 Lua5.1 grammar checks and zero dependency audit findings. The new no-intermediate-render regression was demonstrated failing before the fix and passing afterward. Building checks verify explicit draw layers/sublevels and intact/damaged window visibility; fixed object pools remain stable after500 renders. Independent baseline review also exercised28,000 off-grid world round trips. Execution uses Fengari Lua5.3 semantics, not native WoW.
 
 **Authoritative worlds still arrive every1.25s; no prediction.** Seven-second warnings exceed the tested4s maximum gap but are not a guarantee under arbitrary network loss. Remote countdowns and hit feedback can lag; dodge early. Some0.5s attack frames can fall between snapshots. This is friendly/nonprecision play, not competitive network fighting. Native rendering/fonts/scaling, keyboard focus/taint, real two-client response, optional audio and large live raids remain manual checks. See QA.md for evidence and limitations.
