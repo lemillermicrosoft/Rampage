@@ -25,7 +25,7 @@ A cooperative, opt-in Toast raid-break arcade: original expressive monsters flat
 The traffic-safe R2 host currently sends complete worlds every **1.25 seconds**. Visual animation is smoother, but remote authoritative input feedback is not fast-action-game latency. Measure this with the guild before tuning the wire format/cadence or adding prediction. No claim that the simulated 40-node traffic proves Blizzard transport behavior.
 
 ## Deliverables and gates
-Keep the original `51b6b6d` candidate untouched for rollback. Extend unmerged PR #3 with issue #4, a distinct tested playtest ZIP, hash/manifest verification and clear native-test steps. No forced client reload/SavedVariables edits. No merge/release until `!ship`; CurseForge project ID deferred in issue #2.
+Preserve original candidates for rollback. The owner authorized publishing current files on October 29, 2026 and supplied CurseForge project 1772524. Merge approved PR #3, infer the release version via the existing auto-release pipeline, validate portable ZIP/runtime version/tests, and publish to GitHub plus CurseForge for TBC 2.5.6. Verify upload/publication states separately. No forced client reload or external SavedVariables edits; outstanding native checks remain explicit.
 
 ## Post-playtest priorities
 1. Fix actual native focus/taint/rendering bugs first.

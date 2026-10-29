@@ -197,6 +197,12 @@ Add-Section "Features" $feats
 Add-Section "Fixes" $fixes
 Add-Section "Other" $others
 
+# Preserve reviewed installation/compatibility caveats in both publication targets.
+$releaseNotesPath = Join-Path $RepoRoot "RELEASE_NOTES.md"
+if (Test-Path -LiteralPath $releaseNotesPath) {
+    [void]$sb.AppendLine((Get-Content -LiteralPath $releaseNotesPath -Raw -Encoding UTF8).Trim())
+    [void]$sb.AppendLine()
+}
 $changelog = $sb.ToString().TrimEnd() + "`r`n"
 
 # ---- Report ----

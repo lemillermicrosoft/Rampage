@@ -18,7 +18,9 @@ function execute(source, name) {
   if (status === lua.LUA_OK) status = lua.lua_pcall(L, 0, lua.LUA_MULTRET, 0);
   if (status !== lua.LUA_OK) throw new Error(to_jsstring(lua.lua_tostring(L, -1)));
 }
-execute(`unpack=table.unpack; TEST_COUNT=0
+const tocVersion = fs.readFileSync(path.join(root, 'Rampage.toc'), 'utf8').match(/^## Version:\s*(\S+)/m)?.[1];
+if (!tocVersion || !/^\d+\.\d+\.\d+$/.test(tocVersion)) throw new Error('Invalid TOC version');
+execute(`unpack=table.unpack; TEST_COUNT=0; EXPECTED_VERSION='${tocVersion}'
 function check(name,fn) local ok,err=pcall(fn); if not ok then error('FAIL: '..name..'\\n'..tostring(err),0) end TEST_COUNT=TEST_COUNT+1; print('PASS: '..name) end
 function eq(a,b) assert(a==b,'expected '..tostring(b)..', got '..tostring(a)) end`, '@bootstrap');
 execute(fs.readFileSync(path.join(root, 'tests/wow-smoke.lua'), 'utf8'), '@wow-mock');

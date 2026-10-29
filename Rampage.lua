@@ -1,7 +1,8 @@
 -- WoW adapter only: group identity, addon channel, persistence and combat safety.
 -- TOC order: Model.lua, Protocol.lua, Input.lua, Sound.lua, UI.lua, Rampage.lua.
 local addonName, addon = ...
-local app = { VERSION = "0.1.0", now = function() return GetTime() end }
+local app = { now = function() return GetTime() end }
+app.VERSION = "0.1.0" -- Kept in sync with the TOC by the release packager.
 addon.App = app
 local frame = CreateFrame("Frame")
 local function localMessage(message)

@@ -2,9 +2,9 @@
 
 **<Toast>'s pocket raid-break arcade.** Original monsters climb and smash a shared city, then flatten four fictional bosses. For **TBC Classic 2.5.6 / Interface 20506**. Inspired by classic climb-and-smash games; no copied Rampage artwork/audio or affiliation claimed.
 
-## Current playtest: keyboard + 25-player polish
+## Current release: keyboard + 25-player polish
 
-This iteration adds **25 active monsters and up to 40 total participants**, including read-only spectators; streamlined late join; opt-in keyboard controls; an original warm pixel-style city/creature overhaul; and optional locally installed BlasterMaster sounds. [PR #3](https://github.com/lemillermicrosoft/Rampage/pull/3) covers the MVP and [iteration #4](https://github.com/lemillermicrosoft/Rampage/issues/4). **Not merged/released.** CurseForge ID is deliberately deferred in [#2](https://github.com/lemillermicrosoft/Rampage/issues/2).
+This release line adds **25 active monsters and up to 40 total participants**, including read-only spectators; streamlined late join; opt-in keyboard controls; an original warm pixel-style city/creature overhaul; and optional locally installed BlasterMaster sounds. [PR #3](https://github.com/lemillermicrosoft/Rampage/pull/3) covers the MVP and [iteration #4](https://github.com/lemillermicrosoft/Rampage/issues/4). Publishing was explicitly authorized on October 29, 2026. Project: [CurseForge 1772524](https://www.curseforge.com/wow/addons/rampage-four-more-bosses); [GitHub releases](https://github.com/lemillermicrosoft/Rampage/releases). The sites show current file availability/approval; upload acceptance alone does not imply public approval.
 
 The user demonstrated original-MVP solo play in WoW. **This new keyboard/UI/network iteration has automated and mock-layout verification, not a live 25-player raid or native keyboard/taint sign-off.** See [QA.md](QA.md).
 

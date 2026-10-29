@@ -7,6 +7,8 @@ const root = path.resolve(__dirname, '..');
 const toc = fs.readFileSync(path.join(root, 'Rampage.toc'), 'utf8');
 const runtime = toc.split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith('#'));
 if (!toc.includes('## Interface: 20506')) throw new Error('Wrong TBC interface');
+const tocVersion = toc.match(/^## Version:\s*(\S+)/m)?.[1];
+if (!tocVersion || !/^\d+\.\d+\.\d+$/.test(tocVersion)) throw new Error('Invalid TOC release version');
 if (runtime.some(x => !x.endsWith('.lua') || !fs.existsSync(path.join(root, x)))) throw new Error('Missing TOC file');
 const suites = { model: 'tests/model.lua', protocol: 'tests/protocol.lua', wow: 'tests/wow-smoke.lua' };
 const suite = process.argv.find(x => x.startsWith('--suite='))?.split('=')[1];
@@ -33,6 +35,7 @@ execute(`
   unpack = table.unpack -- Fengari uses Lua 5.3; WoW supplies Lua 5.1 unpack.
   Addon = {}
   TEST_COUNT = 0
+  EXPECTED_VERSION = '${tocVersion}'
   function check(name, run)
     local ok, err = pcall(run)
     if not ok then error('FAIL: ' .. name .. '\\n' .. tostring(err), 0) end
