@@ -8,9 +8,9 @@ The requester supplied an actual WoW screenshot of **the original four-player MV
 
 ## Executed automated checks
 
-- `npm test`: **37/37 passed** — 8 model, 17 protocol, 12 strict WoW/UI/input/audio mock checks.
+- `npm test`: **38/38 passed** — 8 model, 17 protocol, 13 strict WoW/UI/input/audio mock checks.
 - `npm run check:lua51`: **9/9 files parsed** (6 TOC runtime files and 3 Lua suites).
-- `node tests/run.cjs --suite=wow`: **12/12 passed** independently after integration fixes, including missed key-up without a window-focus helper and Meta-key release.
+- `node tests/run.cjs --suite=wow`: **13/13 passed** after integration fixes, including missed key-up without a window-focus helper, Meta-key release and actual-UI lobby capacity regressions.
 - `git diff --check`: clean (Windows LF/CRLF notices are not failures).
 - `npm audit --audit-level=moderate`: zero vulnerabilities in pinned test dependencies.
 - Actual UI mock export: `node tests/ui-preview.cjs --scene <scene> --output docs/previews/mock-<scene>.svg`; solo, raid, boss, victory, spectator scenes generated. SVGs rasterized with an isolated review-only resvg helper and visually inspected. Runtime does not depend on it.
@@ -52,7 +52,7 @@ Hard per-sender budget: 8 msgs/s, 700 charged B/s, burst 10/1,000; 16-byte allow
 
 ## Input, UI and audio coverage
 
-Twelve mock checks cover full TOC load, saved-variable sanitation, no forced window, solo mouse fallback, explicit keyboard grab, WASD/arrows/Space mapping, bounded held repeat, unknown/chat shortcut propagation, edit focus, Escape, focus loss, missed key-up reconciliation without `IsWindowFocused`, Alt/Meta release, long stalls, hide/world departure/spectator/combat release, scaling, visible-only discovery, explicit Join/Spectate, party/raid filtering and canonical cross-realm names.
+Thirteen mock checks cover full TOC load, saved-variable sanitation, no forced window, solo mouse fallback, explicit keyboard grab, WASD/arrows/Space mapping, bounded held repeat, unknown/chat shortcut propagation, edit focus, Escape, focus loss, missed key-up reconciliation without `IsWindowFocused`, Alt/Meta release, long stalls, hide/world departure/spectator/combat release, scaling, visible-only discovery, explicit Join/Spectate, party/raid filtering and canonical cross-realm names.
 
 Combat mocks **throw if restricted propagation is mutated in combat**. Production hides the ordinary keyboard frame and clears held keys; it does not change permanent/override bindings or protected actions. Source signatures were checked against the `classic_anniversary` Blizzard UI mirror:
 - `Blizzard_APIDocumentationGenerated/SimpleFrameAPIDocumentation.lua`: EnableKeyboard / SetPropagateKeyboardInput and restrictions.
@@ -61,6 +61,10 @@ Combat mocks **throw if restricted propagation is mutated in combat**. Productio
 No guaranteed native window-focus API was established; `IsWindowFocused` is guarded. Taskbar switching, exact native key delivery/propagation, and frame taint need manual verification.
 
 Audio mocks cover default-off, missing provider, provider None/nil, playback false/exception, explicit mute, per-cue/global throttles, own-hit-only behavior, major spectator transitions, duplicate transition suppression, and no late-join/hidden-window catch-up. No audio was copied or auditioned. Existing BlasterMaster role assignments are the user's mappings; duration labels in prior tooling were not acoustic proof. Missing/disabled provider remains silent, with no fallback surprise.
+
+### Independent review follow-up: lobby capacity
+
+The narrow follow-up fixes only the discovered-lobby admission display/gate: 24 active +16 spectators disables Join and Spectate with GAME FULL; 25 active +0 spectators labels PLAYERS FULL, disables Join and retains explicit Spectate; 24+15 permits both. An already-admitted spectator can still Switch to Play at 40 total if an active slot is free. Normal mid-game Join remains enabled. All five cases execute the actual UI.lua and button callbacks in one regression check. Protocol caps/rates, keyboard code, and the 1.25s snapshot interval are unchanged. The prior 7b2aff5 candidate remains preserved.
 
 ## Visual review — mock layouts, NOT native screenshots
 

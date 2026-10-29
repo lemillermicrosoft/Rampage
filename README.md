@@ -29,7 +29,7 @@ Enable Rampage at character selection and `/reload` when safe. **All participant
 - Flatten all three towers to expose the boss. Punch from ground lanes **3–5**.
 - Defeat **The Crumb Baron**, **Permitron 9000**, **The Snack Tax**, then **Queuezilla**. Boss HP is 10/12/14/16, with two-second stage transitions.
 - Individual hit/collapse/boss rewards feed team fame. Current participants' scores count; leaving or switching to spectate removes that avatar's current score. Returning to play starts at zero. Local personal best remains.
-- **25 active / 40 total:** a full 25-player game still has room for 15 spectators. Unused active capacity can hold more spectators within the total ceiling. Active slots are never stolen; full active joins fall back to spectator. Spectators can explicitly **Switch to Play** when space opens. The host remains a player and owns Start/replay.
+- **25 active / 40 total:** a full 25-player game still has room for 15 spectators. Unused active capacity can hold more spectators within the total ceiling. Active slots are never stolen. A discovered 40-total lobby labels both admission buttons **GAME FULL** and disables them. At 25 active with observer space, **PLAYERS FULL** disables Join while **SPECTATE** stays available; slash/race-path full active joins still fall back to spectator in the protocol. Existing spectators can explicitly **Switch to Play** when an active slot opens, even if total membership is already 40. The host remains a player and owns Start/replay.
 
 ## Keyboard and raid safety
 
@@ -85,7 +85,7 @@ node tests/run.cjs --suite=wow
 node tests/ui-preview.cjs --scene raid --output docs/previews/mock-raid.svg
 ```
 
-**37 tests:** 8 model, 17 protocol (including 40-node simulations), 12 strict mocked WoW/UI/input/audio checks. **9 Lua files** parse as Lua 5.1 grammar. Execution uses **Fengari Lua 5.3 semantics**, not a native WoW VM. Pinned dev dependencies: Fengari 0.1.5 and luaparse 0.3.1.
+**38 tests:** 8 model, 17 protocol (including 40-node simulations), 13 strict mocked WoW/UI/input/audio checks. **9 Lua files** parse as Lua 5.1 grammar. Execution uses **Fengari Lua 5.3 semantics**, not a native WoW VM. Pinned dev dependencies: Fengari 0.1.5 and luaparse 0.3.1.
 
 `docs/previews/` contains mock renders captured from the actual `UI.lua` geometry, **not WoW screenshots**. They are review artifacts, not runtime Media and are not included in the install ZIP.
 

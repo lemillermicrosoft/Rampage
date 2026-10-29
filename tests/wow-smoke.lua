@@ -270,6 +270,43 @@ function runWoWSmoke()
         UIParent:SetSize(1600,1000); event("UI_SCALE_CHANGED"); eq(ui.root:GetScale(),1)
         ui.root:Hide(); local before=#sent; step(4.1); eq(#sent,before)
     end)
+    check("WoW mock: discovered capacity gates new admission, not existing spectator role switches", function()
+        local net=app.net
+        local oldList,oldJoin,oldRole=net.lobbyList,net.join,net.setRole
+        local oldMode,oldState,oldNetRole,oldSlot=net.mode,net.state,net.role,net.slot
+        local lobby={name="Friend-OtherRealm",sid="capacity",phase="play",count=24,spectators=16}
+        local joins,roles={},{}
+        net.lobbyList=function() return {lobby} end
+        net.join=function(_,name,sid,role) eq(name,lobby.name); eq(sid,lobby.sid); joins[#joins+1]=role; return true end
+        net.setRole=function(_,role) roles[#roles+1]=role; return true end
+        net.mode,net.state,net.role,net.slot="idle",nil,nil,nil; ui.root:Show(); ui.render()
+        -- 24 active +16 observers: total capacity is full despite a free active slot.
+        assert(not ui.primary:IsEnabled() and not ui.spectate:IsEnabled())
+        eq(ui.primary.label:GetText(),"GAME FULL"); eq(ui.spectate.label:GetText(),"GAME FULL")
+        assert(string.find(ui.lobby:GetText(),"FULL (40/40)",1,true))
+        click(ui.primary); click(ui.spectate); eq(#joins,0)
+        -- 25 active +0 observers: player admission is disabled, explicit Spectate remains.
+        lobby.count,lobby.spectators=25,0; ui.render()
+        assert(not ui.primary:IsEnabled() and ui.spectate:IsEnabled()); eq(ui.primary.label:GetText(),"PLAYERS FULL")
+        eq(ui.spectate.label:GetText(),"SPECTATE"); assert(string.find(ui.lobby:GetText(),"SPECTATE to watch",1,true))
+        click(ui.primary); eq(#joins,0); click(ui.spectate); eq(joins[1],"spectate")
+        -- 24 +15: both admission choices work; phase=play proves join-in-progress UI.
+        lobby.count,lobby.spectators=24,15; ui.render()
+        assert(ui.primary:IsEnabled() and ui.spectate:IsEnabled()); eq(ui.primary.label:GetText(),"JOIN GAME")
+        click(ui.primary); eq(joins[2],"play"); click(ui.spectate); eq(joins[3],"spectate")
+        -- Existing observers do not consume new total capacity when becoming active.
+        lobby.spectators=16; net.mode,net.role="client","spectate"
+        net.state=Addon.Model.new(); net.state.phase="play"; net.state._activeCount,net.state._spectators=24,16
+        ui.render(); assert(ui.primary:IsEnabled()); eq(ui.primary.label:GetText(),"SWITCH TO PLAY")
+        click(ui.primary); eq(roles[1],"play"); eq(#joins,3)
+        -- Ordinary ongoing game remains joinable after the full-lobby display clears.
+        net.mode,net.state,net.role="idle",nil,nil; lobby.count,lobby.spectators=3,2; ui.render()
+        assert(ui.primary:IsEnabled() and ui.spectate:IsEnabled()); eq(ui.primary.label:GetText(),"JOIN GAME")
+        click(ui.primary); eq(joins[4],"play")
+        net.lobbyList,net.join,net.setRole=oldList,oldJoin,oldRole
+        net.mode,net.state,net.role,net.slot=oldMode,oldState,oldNetRole,oldSlot
+        ui.root:Hide()
+    end)
     check("WoW mock: host/start/leave slash commands use only bounded addon messages", function()
         SlashCmdList.RAMPAGE("host"); eq(app.net.mode, "host"); assert(ui.root:IsShown())
         step(0.5); assert(#sent > 0); eq(sent[#sent].distribution, "PARTY")

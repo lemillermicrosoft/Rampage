@@ -286,19 +286,24 @@ function UI.render()
     local idle=net.mode=="idle"; local spectator=net.role=="spectate"; local count=net:count()
     local watch=net.spectatorCount and net:spectatorCount() or 0
     local lobby=UI.selectedLobby(); UI.displayedLobby=lobby
+    local lobbyFull=lobby and lobby.count+(lobby.spectators or 0)>=40
+    local activeFull=lobby and lobby.count>=25
     local canPlay=app.input:canPlay()
-    if idle then label(UI.primary,lobby and "JOIN GAME" or (net.grouped and "HOST & START" or "PLAY SOLO"))
+    if idle then label(UI.primary,lobby and (lobbyFull and "GAME FULL" or (activeFull and "PLAYERS FULL" or "JOIN GAME")) or (net.grouped and "HOST & START" or "PLAY SOLO"))
     elseif spectator then label(UI.primary,"SWITCH TO PLAY")
     elseif s and s.phase=="victory" then label(UI.primary,"PLAY AGAIN")
     elseif s and s.phase=="lobby" then label(UI.primary,"START GAME")
     else label(UI.primary,app.input.focused and "PLAYING • KEYS LIVE" or "PLAY • GRAB KEYS") end
     local owner=net.mode=="host" or net.mode=="solo"
-    enabled(UI.primary,not net.combat and (idle and (not lobby or lobby.count<25) or spectator and count<25 and net.mode~="joining"
+    enabled(UI.primary,not net.combat and (idle and (not lobby or not lobbyFull and not activeFull) or spectator and count<25 and net.mode~="joining"
         or not spectator and (canPlay or owner and s and (s.phase=="lobby" or s.phase=="victory"))))
-    enabled(UI.spectate,not net.combat and (idle and lobby~=nil and lobby.count+(lobby.spectators or 0)<40 or net.mode=="client" and not spectator))
+    label(UI.spectate,idle and lobbyFull and "GAME FULL" or "SPECTATE")
+    enabled(UI.spectate,not net.combat and (idle and lobby~=nil and not lobbyFull or net.mode=="client" and not spectator))
     enabled(UI.solo,idle and not net.combat); enabled(UI.next,idle and lobby~=nil); enabled(UI.leave,not idle)
     local lobbyLine=lobby and ("FOUND  "..short(lobby.name).."  •  "..lobby.count.."/25 playing  •  "..(lobby.spectators or 0).." watching  •  "..lobby.phase)
         or (net.grouped and "Looking for group lobbies… or host a new game. Joining is always opt-in." or "Solo ready. Join a party / raid to find friends automatically.")
+    if lobbyFull then lobbyLine=lobbyLine.."  •  FULL (40/40)"
+    elseif activeFull then lobbyLine=lobbyLine.."  •  Players full — SPECTATE to watch" end
     UI.lobby:SetText(idle and lobbyLine or ((spectator and "WATCHING" or string.upper(net.mode)).."  •  "..(net.hostName and short(net.hostName) or "Your pocket city").."  •  "..count.."/25 monsters  •  "..watch.." spectators • 40 total max"))
     UI.crewTitle:SetText("THE CREW  "..count.." / 25"); UI.crewSub:SetText(watch.." watching • hover a slot")
     for slot=1,25 do
