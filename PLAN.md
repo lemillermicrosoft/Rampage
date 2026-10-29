@@ -1,35 +1,34 @@
 # Rampage — FOUR MORE BOSSES!
 
 ## Vision
-An opt-in cooperative city-smashing arcade game for <Toast> raid downtime in TBC Classic 2.5.6. Celebrate the guild's rise to fame with monsters, destructible towers, silly fictional bosses, and the refrain “just FOUR MORE BOSSES!” Take inspiration from Rampage's climb-and-smash play, using original geometric art, names, and jokes rather than copied assets or branding claims.
+A cooperative, opt-in Toast raid-break arcade: original expressive monsters flatten a shared city and four silly bosses. Keep raid controls safe, joining simple, and changes small enough to playtest quickly.
 
-## Scope (MVP)
-1. A movable /rampage window with solo practice and explicit raid/party Host, Join, Start, Leave controls. No automatic invitations or forced windows.
-2. Simple move/climb/punch gameplay: original blocky monsters demolish a shared city, with visible damage and punch feedback.
-3. Exactly four short stages with fictional boss encounters, shared victory, personal score, and Toast/fame flavor.
-4. Host-authoritative cooperative state using bounded, throttled addon-channel messages; group-member validation, duplicate/out-of-order defense, join/rejoin synchronization, timeout and group-leave handling.
-5. Raid-safe defaults: no public chat/sound spam, no global keybindings, and no active game controls during combat. Local saved best score/settings only.
+## Current delivered scope
+- Original first playable: solo, shared destructible towers, move/climb/punch, four bosses, personal fame and host-authoritative party/raid lobbies.
+- Issue #4 iteration: **25 active / 40 total**, explicit Spectate and role switching, late join with bounded R2 chunked snapshots, one-click Join Game / Host & Start with visible-window discovery.
+- Explicit keyboard PLAY capture, WASD/arrows/Space repeat, Escape/focus/chat/hide/leave/combat releases, physical-key reconciliation, compact mouse fallback; no binding changes.
+- Warm arcade city, varied stepped creature geometry, local highlight, 25-player hover chips/overlap offsets, boss HP/shield, pooled particle/destruction/stage/victory effects, fit-to-screen scale.
+- Optional default-off external BlasterMaster role accessor; local throttled cues and spectator-major-event mode, no bundled game audio or global volume edits.
 
-## Technical Tasks
-1. Scaffold from SwingPulse's repository tooling; Interface 20506 verified against SwingPulse.toc.
-2. Separate a deterministic Lua 5.1-compatible game model from communication and rendering.
-3. Implement bounded protocol and roster/session validation; keep each message below WoW's 255-byte limit.
-4. Implement a readable original-geometry arcade UI and explicit mouse controls; keyboard capture optional and scoped only to focused play.
-5. Add host/client adapters, combat safety, slash command help, and persistence.
-6. Exercise gameplay and simulated multiplayer via a headless Lua runner; document the real-client smoke test separately.
+## Implementation and tests
+- [x] Separate deterministic model, protocol, input, sound, UI and WoW adapter modules.
+- [x] Preserve actual roster/host/session/generation/sequence authority and bounded packet/queue/fragment state.
+- [x] Exercise 25 actors + 15 spectators in a finite-budget 40-node broadcast simulator with loss/reordering, reconnect, four bosses, replay and combat pause.
+- [x] Integrate strict input/audio/UI lifecycle mocks and fixed frame/texture pools.
+- [x] Lua 5.1 grammar checks and Fengari execution; no native VM proof implied.
+- [x] Export and inspect actual-UI mock geometry scenes, not separate concept art.
+- [ ] Actual TBC input propagation/taint/taskbar focus and visual scale verification.
+- [ ] Real two-client baseline, then 25-player raid performance/play-feel verification.
+- [ ] Actual local sound playback/remapping and mute verification.
 
-## QA and Validation
-- Load all TOC files under Lua 5.1-compatible runtime with mocked WoW globals.
-- Move, climb, punch, demolish towers, defeat each of four bosses, finish and restart.
-- Simulate at least two clients: discover, join, shared score/state, late join, duplicate/stale/foreign packets, rate limit, host disappearance and roster departure.
-- Verify message lengths, bounded player count, timers and frame allocation; no generic raid chat writes.
-- Manually verify two actual TBC clients in the same raid, combat hides/disables controls, UI geometry, and input release. Mark unperformed checks honestly.
+## Important tradeoff
+The traffic-safe R2 host currently sends complete worlds every **1.25 seconds**. Visual animation is smoother, but remote authoritative input feedback is not fast-action-game latency. Measure this with the guild before tuning the wire format/cadence or adding prediction. No claim that the simulated 40-node traffic proves Blizzard transport behavior.
 
-## Post-MVP Ideas
-- More monster silhouettes, animation, optional sound effects, hazards, cosmetics, and polished pixel art.
-- Raid-night records and more Toast in-jokes after the guild tries the first slice.
-- Host migration and larger lobbies only after basic networking is proven.
+## Deliverables and gates
+Preserve original candidates for rollback. The owner authorized publishing current files on October 29, 2026 and supplied CurseForge project 1772524. Merge approved PR #3, infer the release version via the existing auto-release pipeline, validate portable ZIP/runtime version/tests, and publish to GitHub plus CurseForge for TBC 2.5.6. Verify upload/publication states separately. No forced client reload or external SavedVariables edits; outstanding native checks remain explicit.
 
-## Deliverables
-- GitHub repository, working local WoW development junction, playable feature PR, test evidence, and playtest instructions.
-- CurseForge project ID deferred at deehoc's request. No release or merge until explicit !ship.
+## Post-playtest priorities
+1. Fix actual native focus/taint/rendering bugs first.
+2. Measure/tune remote response cadence within a realistic addon traffic budget.
+3. Refine monster animation, stage variation, optional original sound cues and tiny cooperative mechanics based on guild feedback.
+4. Host migration, hazards, rich progression and complex matchmaking remain out of this quick iteration.

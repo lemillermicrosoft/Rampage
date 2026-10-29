@@ -75,10 +75,15 @@ Write-Host ("[release-addon] {0} {1} -> {2}" -f $addon, $tag, $zipPath) -Foregro
 
 # Changelog for GitHub/CurseForge
 $changelogPath = Join-Path $RepoRoot "CHANGELOG_RELEASE.md"
-$changelog = if (Test-Path -LiteralPath $changelogPath) { Get-Content -LiteralPath $changelogPath -Raw } else { "Release $tag" }
+$changelog = if (Test-Path -LiteralPath $changelogPath) { Get-Content -LiteralPath $changelogPath -Raw -Encoding UTF8 } else { "Release $tag" }
 
 Push-Location $RepoRoot
 try {
+    # Verify the exact version-bumped runtime before tagging or either upload.
+    if (-not $DryRun -and (Test-Path -LiteralPath (Join-Path $RepoRoot 'tests\run.cjs'))) {
+        node tests\run.cjs
+        if ($LASTEXITCODE -ne 0) { throw 'Release runtime tests failed; nothing tagged or uploaded.' }
+    }
     if (-not $SkipGit) {
         Write-Host "==== [release-addon] Git ====" -ForegroundColor Cyan
         $status = (git status --porcelain) -join "`n"
@@ -88,7 +93,9 @@ try {
                 Write-Host $status
             } else {
                 git add -A | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw 'git add failed' }
                 git commit -m ("chore(release): {0} {1}" -f $addon, $tag) | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw 'Release commit failed' }
             }
         }
         # Tag
@@ -99,10 +106,13 @@ try {
             Write-Host "[release-addon] DryRun: would tag $tag" -ForegroundColor Yellow
         } else {
             git tag -a $tag -m ("Release {0}" -f $tag) | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Release tag creation failed' }
         }
         if (-not $DryRun) {
             git push | Out-Null
-            git push --tags | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Release commit push failed' }
+            git push origin $tag | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Release tag push failed' }
         }
 
         if (-not $SkipGitHub) {
@@ -118,6 +128,7 @@ try {
                         Write-Host ("[release-addon] DryRun: gh release create {0} {1} -F <notes>" -f $tag, $zipPath) -ForegroundColor Yellow
                     } else {
                         gh release create $tag $zipPath -t $tag -F $notesFile
+                        if ($LASTEXITCODE -ne 0) { throw 'GitHub release failed; inspect partial state before retrying' }
                     }
                 } finally { Remove-Item -LiteralPath $notesFile -Force -ErrorAction SilentlyContinue }
             }

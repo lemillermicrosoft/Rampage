@@ -105,10 +105,10 @@ function Step-SemVer {
 
 function Update-TocVersion {
     param([string]$TocPath, [string]$NewVersion)
-    $content = Get-Content -LiteralPath $TocPath -Raw
+    $content = Get-Content -LiteralPath $TocPath -Raw -Encoding UTF8
     $updated = [regex]::Replace($content, '(?m)^(##\s*Version:\s*).+$', ('${1}' + $NewVersion))
     if ($content -eq $updated) { throw "Failed to update version line in $TocPath" }
-    Set-Content -LiteralPath $TocPath -Value $updated -NoNewline:$false -Encoding utf8
+    [System.IO.File]::WriteAllText($TocPath, $updated, [System.Text.UTF8Encoding]::new($false))
 }
 
 function Update-LuaVersions {
@@ -117,11 +117,11 @@ function Update-LuaVersions {
     $luaFiles = Get-ChildItem -LiteralPath $RepoRoot -Filter *.lua -Recurse -File |
         Where-Object { $_.FullName -notmatch '\\dist\\' -and $_.FullName -notmatch '\\\.tmp\\' }
     foreach ($f in $luaFiles) {
-        $orig = Get-Content -LiteralPath $f.FullName -Raw
+        $orig = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8
         # Match: <Ident>.VERSION = "x.y.z"  (also handles single quotes)
         $updated = [regex]::Replace($orig, '([A-Za-z_][A-Za-z0-9_]*\.VERSION\s*=\s*)(["''])[^"'']+\2', ('${1}${2}' + $NewVersion + '${2}'))
         if ($orig -ne $updated) {
-            Set-Content -LiteralPath $f.FullName -Value $updated -NoNewline:$false -Encoding utf8
+            [System.IO.File]::WriteAllText($f.FullName, $updated, [System.Text.UTF8Encoding]::new($false))
             $changed += $f.FullName
         }
     }
@@ -193,14 +193,27 @@ try {
     }
 
     # Include README + LICENSE + Bindings.xml if present
-    foreach ($extra in @("README.md","LICENSE","LICENSE.md","LICENSE.txt","Bindings.xml","CHANGELOG.md","CHANGELOG_RELEASE.md")) {
+    foreach ($extra in @("README.md","LICENSE","LICENSE.md","LICENSE.txt","Bindings.xml","CHANGELOG.md","CHANGELOG_RELEASE.md","RELEASE_NOTES.md","QA.md","PLAN.md","docs\PROTOCOL.md")) {
         $src = Join-Path $RepoRoot $extra
         if (Test-Path -LiteralPath $src -PathType Leaf) {
-            Copy-Item -LiteralPath $src -Destination (Join-Path $stageRoot $extra) -Force
+            $dest = Join-Path $stageRoot $extra
+            $parent = Split-Path -Parent $dest
+            if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+            Copy-Item -LiteralPath $src -Destination $dest -Force
         }
     }
 
-    Compress-Archive -Path $stageRoot -DestinationPath $zipPath -CompressionLevel Optimal -Force
+    # Windows Compress-Archive emitted backslash entry names. ZIP paths must use
+    # forward slashes so the same artifact installs on Windows and macOS.
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in (Get-ChildItem -LiteralPath $stageRoot -Recurse -File | Sort-Object FullName)) {
+            $relative = $file.FullName.Substring($stageRoot.Length + 1).Replace('\', '/')
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, ($addonName + '/' + $relative), [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        }
+    } finally { $archive.Dispose() }
     Write-Host ("[build-addon] Created: {0}" -f $zipPath) -ForegroundColor Green
 }
 finally {
@@ -215,10 +228,9 @@ if ($Validate) {
         Write-Host "[build-addon] Archive entries:"
         $entries | ForEach-Object { Write-Host "  $_" }
 
-        $bad = $entries | Where-Object { $_ -match '(^|/)\.(git|claude|agent|tmp|vscode)(/|$)' -or $_ -match '(^|/)tools/' -or $_ -match '(^|/)dist/' }
+        $bad = $entries | Where-Object { $_.Contains('\') -or -not $_.StartsWith($addonName + '/') -or $_ -match '(^|/)\.(git|claude|agent|tmp|vscode)(/|$)' -or $_ -match '(^|/)(tools|dist|tests|node_modules|previews)/' }
         if ($bad) {
-            Write-Warning "Dev-only entries found in archive:"
-            $bad | ForEach-Object { Write-Warning "  $_" }
+            throw ("Unsafe/non-runtime archive entries: " + ($bad -join ', '))
         } else {
             Write-Host "[build-addon] Validation OK: no dev-only entries." -ForegroundColor Green
         }

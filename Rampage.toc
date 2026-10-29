@@ -6,4 +6,9 @@
 ## IconTexture: Interface\AddOns\Rampage\Media\icon.png
 ## SavedVariables: RampageDB
 
+Model.lua
+Protocol.lua
+Input.lua
+Sound.lua
+UI.lua
 Rampage.lua
