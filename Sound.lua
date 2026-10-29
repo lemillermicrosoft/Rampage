@@ -3,8 +3,8 @@
 local _, addon = ...
 local Sound = {}
 addon.Sound = Sound
-local roles = { punch = "crit", collapse = "combatStart", boss = "levelUp", victory = "levelUp", stage = "combatStart" }
-local gaps = { punch = 1.3, collapse = 2.2, boss = 2.3, victory = 2.3, stage = 2.2 }
+local roles = { punch = "crit", hurt = "combatStart", collapse = "combatStart", boss = "levelUp", victory = "levelUp", stage = "combatStart" }
+local gaps = { punch = 1.3, hurt = 4, collapse = 2.2, boss = 2.3, victory = 2.3, stage = 2.2 }
 function Sound.create(app)
     local self = { app = app, last = {}, nextAny = 0, status = "Sound off", seen = {} }
     function self:enabled()
@@ -57,14 +57,16 @@ function Sound.create(app)
                     end
                 end
                 local p = net.slot and s.players[net.slot]
-                if not major and s.stage == prev.stage and s.phase == "play" and p and prev.slot == net.slot
-                    and prev.hit ~= nil and p.hit ~= prev.hit then self:cue("punch") end
+                if not major and s.stage == prev.stage and s.phase == "play" and p and prev.slot == net.slot then
+                    if prev.hp and (p.hp or 100)<prev.hp then self:cue("hurt")
+                    elseif prev.hit ~= nil and p.hit ~= prev.hit then self:cue("punch") end
+                end
             end
         end
         local p = net.slot and s.players[net.slot]
         self.session = identity
         self.baseline = { stage = s.stage, phase = s.phase, at = now, visible = visible, seq = net.inSeq or 0,
-            slot = net.slot, hit = p and p.hit, towers = {} }
+            slot = net.slot, hit = p and p.hit, hp = p and (p.hp or 100), towers = {} }
         for tower = 1, 3 do self.baseline.towers[tower] = addon.Model.towerAlive(s, tower) end
         if not self:enabled() then self.status = "Sound off" end
     end

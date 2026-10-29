@@ -1,10 +1,10 @@
--- R2: host-authoritative, bounded group broadcasts. Tokens are correlation, not secrets.
+-- R3: host-authoritative chaos, bounded group broadcasts. Tokens are correlation, not secrets.
 local _, addon = ...
 local M = addon.Model
-local N = { PREFIX = "ToastRampage1", VERSION = "R2", MAX_BYTES = 255,
+local N = { PREFIX = "ToastRampage1", VERSION = "R3", MAX_BYTES = 255,
     MAX_MEMBERS = 40, SEND_RATE = 8, SEND_BURST = 10, BYTE_RATE = 700,
     BYTE_BURST = 1000, WIRE_OVERHEAD = 16, MAX_QUEUE = 128,
-    SNAPSHOT_INTERVAL = 1.25, CHUNK_BYTES = 176, MAX_CHUNKS = 2,
+    SNAPSHOT_INTERVAL = 1.25, CHUNK_BYTES = 176, MAX_CHUNKS = 3,
     ASSEMBLY_TIMEOUT = 6, MAX_ASSEMBLIES = 3 }
 addon.Protocol = N
 local methods = {}
@@ -42,12 +42,16 @@ local function unbase(s, low, high)
     end
     if n < low or n > high then return nil end; return n
 end
-local function packet(...) return table.concat({ "R2", ... }, "|") end
+local function packet(...) return table.concat({ "R3", ... }, "|") end
 local function roleCode(role) return role == "spectate" and "s" or "p" end
 local function roleOK(role) return role == "play" or role == "spectate" end
+local function modeCode(mode) return mode == "brawl" and "b" or "c" end
+local modeNames = { c = "coop", b = "brawl" }
+local hazardCodes = { warning = "w", impact = "i", idle = "d" }
+local hazardNames = { w = "warning", i = "impact", d = "idle" }
+local function tenths(n, maximum) return math.min(maximum, math.max(0, math.ceil((n or 0) * 10 - 0.00001))) end
 
--- A fixed 25-slot numeric world plus a 40-member presence/role map. Names travel
--- separately; an incomplete name carousel never blocks the world stream.
+-- Fixed numeric actors and independent real-member/name stream; bots never occupy member IDs.
 function N.encodeState(s, sid, seq, epoch, revision, participants)
     local hp, players, map = {}, {}, {}
     for i = 1, 9 do hp[i] = tostring(s.hp[i] or 0) end
@@ -55,14 +59,22 @@ function N.encodeState(s, sid, seq, epoch, revision, participants)
     if participants then
         for id, member in pairs(participants) do map[id] = base(member.slot or 0, 1) end
     else
-        for slot = 1, 25 do if s.players[slot] then map[slot] = base(slot, 1) end end
+        for slot = 1, 25 do if s.players[slot] and not s.players[slot].bot then map[slot] = base(slot, 1) end end
     end
     for slot = 1, 25 do
         local p = s.players[slot]
-        players[slot] = p and (base(p.x, 1) .. base(p.y, 1) .. base(p.score, 4) .. base(p.hit, 2)) or "--------"
+        players[slot] = p and (base(p.x, 1) .. base(p.y, 1) .. base(p.score, 4) .. base(p.hit, 2)
+            .. base(p.hp or 100, 2) .. base(tenths(p.ko, 40), 2) .. base(tenths(p.invuln, 30), 1)
+            .. base(p.kos or 0, 2) .. base((p.botID or 0)*2 + (p.protected and 1 or 0), 1)) or "----------------"
+    end
+    local hazard, h, mask = "-", s.hazard, 0
+    if h then
+        for _, lane in ipairs(h.lanes) do mask = mask + 2^(lane-1) end
+        hazard = base(h.id, 4) .. hazardCodes[h.phase] .. base(mask, 2) .. base(tenths(h.remaining, 70), 2)
     end
     local body = table.concat({ phases[s.phase], s.stage, s.boss, s.paused and 1 or 0,
-        epoch or 1, revision or 1, table.concat(hp), table.concat(map), table.concat(players) }, ",")
+        epoch or 1, revision or 1, table.concat(hp), table.concat(map), modeCode(s.mode),
+        base(tenths(s.time, 60466175), 5), hazard, table.concat(players) }, ",")
     local chunks, total = {}, math.ceil(#body / N.CHUNK_BYTES)
     assert(total <= N.MAX_CHUNKS, "snapshot exceeds configured bound")
     for part = 1, total do
@@ -74,32 +86,54 @@ end
 function N.decodeState(body)
     if type(body) ~= "string" or #body > N.CHUNK_BYTES * N.MAX_CHUNKS then return nil end
     local f = split(body, ",")
-    if #f ~= 9 or not phaseNames[f[1]] then return nil end
+    if #f ~= 12 or not phaseNames[f[1]] or not modeNames[f[9]] then return nil end
     local stage, boss, paused = integer(f[2], 1, 4), integer(f[3], 0, 16), integer(f[4], 0, 1)
     local epoch, revision = integer(f[5], 1, 999999), integer(f[6], 1, 999999)
-    if not stage or not boss or boss > 8 + stage * 2 or not paused or not epoch or not revision
-        or #f[7] ~= 9 or string.find(f[7], "[^012]") or #f[8] ~= 40 or #f[9] ~= 200 then return nil end
-    local s, used, mapping = M.new(), {}, {}
+    local clock = #f[10] == 5 and unbase(f[10], 0, 60466175)
+    if not stage or not boss or boss > 8 + stage * 2 or not paused or not epoch or not revision or not clock
+        or #f[7] ~= 9 or string.find(f[7], "[^012]") or #f[8] ~= 40 or #f[12] ~= 400 then return nil end
+    local s, used, mapping, botIDs = M.new(modeNames[f[9]]), {}, {}, {}
     s.phase, s.stage, s.boss, s.paused, s._epoch, s._revision = phaseNames[f[1]], stage, boss, paused == 1, epoch, revision
-    s._activeCount, s._spectators = 0, 0
+    s.time, s._activeCount, s._spectators, s._botCount = clock/10, 0, 0, 0
+    if f[11] ~= "-" then
+        local h = f[11]; if #h ~= 9 then return nil end
+        local id, phase = unbase(string.sub(h, 1, 4), 1, 1679615), hazardNames[string.sub(h, 5, 5)]
+        local mask, remaining = unbase(string.sub(h, 6, 7), 0, 127), unbase(string.sub(h, 8, 9), 0, 70)
+        if not id or not phase or not mask or not remaining or (phase ~= "idle" and mask == 0)
+            or (phase == "idle" and (mask ~= 0 or remaining > 30)) or (phase == "impact" and remaining > 5) then return nil end
+        local lanes = {}; for x = 1, 7 do if math.floor(mask/2^(x-1)) % 2 == 1 then lanes[#lanes+1] = x end end
+        s.hazard, s.hazardID = { id = id, phase = phase, lanes = lanes, remaining = remaining/10 }, id
+    end
     for i = 1, 9 do s.hp[i] = tonumber(string.sub(f[7], i, i)) end
     for id = 1, 40 do
         local c = string.sub(f[8], id, id)
         if c ~= "." then
             local slot = unbase(c, 0, 25); if not slot or (slot > 0 and used[slot]) then return nil end
             mapping[id] = slot
-            if slot > 0 then used[slot] = true; s._activeCount = s._activeCount + 1 else s._spectators = s._spectators + 1 end
+            if slot > 0 then used[slot] = true else s._spectators = s._spectators + 1 end
         end
     end
     if mapping[1] ~= 1 then return nil end
     s._mapping = mapping
     for slot = 1, 25 do
-        local p = string.sub(f[9], (slot - 1) * 8 + 1, slot * 8)
-        if p ~= "--------" then
+        local p = string.sub(f[12], (slot - 1) * 16 + 1, slot * 16)
+        if p ~= "----------------" then
             local x, y = unbase(string.sub(p, 1, 1), 1, 7), unbase(string.sub(p, 2, 2), 0, 3)
             local score, hit = unbase(string.sub(p, 3, 6), 0, 99999), unbase(string.sub(p, 7, 8), 0, 999)
-            if not x or not y or not score or not hit or not used[slot] or (y > 0 and not M.towerIndex(x)) then return nil end
-            s.players[slot] = { x = x, y = y, score = score, hit = hit }
+            local health, ko = unbase(string.sub(p, 9, 10), 0, 100), unbase(string.sub(p, 11, 12), 0, 40)
+            local invuln, kos = unbase(string.sub(p, 13, 13), 0, 30), unbase(string.sub(p, 14, 15), 0, 1295)
+            local flags = unbase(string.sub(p, 16, 16), 0, 11)
+            if not x or not y or not score or not hit or not health or not ko or not invuln or not kos or not flags
+                or (y > 0 and not M.towerIndex(x)) or (ko > 0 and health ~= 0) or (health == 0 and ko == 0) then return nil end
+            local botID = math.floor(flags/2)
+            if botID > 0 then
+                if used[slot] or botIDs[botID] or flags % 2 == 1 then return nil end
+                botIDs[botID] = true; s._botCount = s._botCount+1
+            elseif not used[slot] then return nil end
+            s._activeCount = s._activeCount+1
+            s.players[slot] = { x=x, y=y, score=score, hit=hit, hp=health, maxHP=100,
+                ko=ko/10, invuln=invuln/10, kos=kos, protected=flags%2==1,
+                bot=botID>0, botID=botID>0 and botID or nil, name=M.BOT_NAMES[botID] }
         elseif used[slot] then return nil end
     end
     return s
@@ -108,7 +142,7 @@ end
 function N.new(env)
     assert(nameOK(env.name), "A canonical player-realm name is required")
     return setmetatable({ env = env, name = env.name, mode = "idle", roster = {}, grouped = false,
-        lobbies = {}, members = {}, participants = {}, memberVersions = {}, receiveBuckets = {},
+        lobbies = {}, members = {}, bots = {}, selectedMode = "coop", protectionSeq = 0, participants = {}, memberVersions = {}, receiveBuckets = {},
         queue = {}, queueOrder = {}, tokens = N.SEND_BURST, bytes = N.BYTE_BURST, lastRefill = env.now(),
         assemblies = {}, inSeq = 0, outSeq = 0, status = "Solo practice, or find a party/raid lobby." }, { __index = methods })
 end
@@ -147,11 +181,63 @@ function methods:reset(message)
     self.members, self.participants, self.memberVersions, self.queue, self.queueOrder, self.assemblies = {}, {}, {}, {}, {}, {}
     self.joinToken, self.generation, self.lastSnapshot, self.inSeq, self.outSeq = nil, nil, nil, 0, 0
     self.roleSeq, self.acceptedRoleSeq, self.lastLocalAction, self.requestedRole = 0, 0, nil, nil
-    self.challenges, self.ownMemberID = {}, nil; self:notice(message or "Left the game.")
+    self.challenges, self.ownMemberID, self.bots, self.protectionSeq, self.expectedMode = {}, nil, {}, 0, nil
+    self:notice(message or "Left the game.")
 end
 function methods:rebuildMembers()
     self.members = {}
     for _, member in pairs(self.participants) do if member.slot then self.members[member.slot] = member end end
+    if self.mode == "host" or self.mode == "solo" then
+        for slot, member in pairs(self.bots) do self.members[slot] = member end
+    elseif self.state then
+        for slot, p in pairs(self.state.players) do
+            if p.bot then self.members[slot] = { name = p.name, bot = true, botID = p.botID, slot = slot } end
+        end
+    end
+end
+function methods:botCount()
+    if self.mode ~= "host" and self.mode ~= "solo" and self.state then return self.state._botCount or 0 end
+    local n = 0; for _ in pairs(self.bots) do n = n+1 end; return n
+end
+function methods:setMode(mode)
+    if not M.validMode(mode) or self.combat then return false end
+    if self.mode == "idle" then self.selectedMode = mode; self:notice(); return true end
+    if (self.mode ~= "host" and self.mode ~= "solo") or (self.state.phase ~= "lobby" and self.state.phase ~= "victory") then return false end
+    if self.mode == "host" and mode ~= self.state.mode then
+        -- Joined players AND spectators consented to a particular mode. Require
+        -- them to leave/rejoin instead of silently turning their game into PvP.
+        for id = 2, 40 do
+            if self.participants[id] then
+                self:notice("Mode locked while guests are joined. Start a new lobby or ask guests to Leave first.")
+                return false
+            end
+        end
+    end
+    self.selectedMode, self.state.mode = mode, mode
+    if self.mode == "host" then self:advertise() end
+    self:notice("Next game: " .. (mode == "brawl" and "Brawl (friendly fire ON)." or "Co-op (no friendly fire).")); return true
+end
+function methods:addAI()
+    if (self.mode ~= "host" and self.mode ~= "solo") or self.combat or self:botCount() >= M.MAX_BOTS or self:count() >= M.MAX_PLAYERS then return false end
+    local used, slot = {}, nil
+    for _, bot in pairs(self.bots) do used[bot.botID] = true end
+    for i = 2, M.MAX_PLAYERS do if not self.members[i] then slot = i; break end end
+    local botID; for i = 1, M.MAX_BOTS do if not used[i] then botID = i; break end end
+    if not slot or not botID or not M.addPlayer(self.state, slot, botID) then return false end
+    self.botSerial = (self.botSerial or 0)+1
+    self.bots[slot] = { name = M.BOT_NAMES[botID], bot = true, botID = botID, slot = slot, order = self.botSerial }
+    self:rebuildMembers(); if self.mode == "host" then self:advertise() end
+    self:notice("Added " .. M.BOT_NAMES[botID] .. " (Addon AI)."); return true
+end
+function methods:removeAI()
+    if self.mode ~= "host" and self.mode ~= "solo" then return false end
+    local oldest
+    for slot, bot in pairs(self.bots) do if not oldest or bot.order < self.bots[oldest].order then oldest = slot end end
+    if not oldest then return false end
+    local name = self.bots[oldest].name
+    self.bots[oldest] = nil; M.removePlayer(self.state, oldest); self:rebuildMembers()
+    if self.mode == "host" then self:advertise() end
+    self:notice("Removed " .. name .. " (Addon AI)."); return true
 end
 function methods:count()
     if self.mode ~= "host" and self.mode ~= "solo" and self.state then return self.state._activeCount or 0 end
@@ -174,19 +260,23 @@ function methods:setRoster(roster, grouped)
         for name in pairs(self.challenges) do if not roster[name] then self.challenges[name] = nil end end
     end
 end
-function methods:solo()
-    if self.mode ~= "idle" or self.combat then return false end
-    self.mode, self.slot, self.role, self.state = "solo", 1, "play", M.new()
+function methods:solo(mode)
+    mode = mode or self.selectedMode or "coop"
+    if self.mode ~= "idle" or self.combat or not M.validMode(mode) then return false end
+    self.mode, self.slot, self.role, self.state = "solo", 1, "play", M.new(mode)
+    self.selectedMode, self.bots = mode, {}
     self.participants = { { name = self.name, slot = 1 } }; self:rebuildMembers()
     M.addPlayer(self.state, 1); M.start(self.state); self:notice("Solo practice: flatten three towers, then punch the boss!"); return true
 end
-function methods:host()
-    if self.mode ~= "idle" or self.combat or not self.grouped then
+function methods:host(mode)
+    mode = mode or self.selectedMode or "coop"
+    if self.mode ~= "idle" or self.combat or not self.grouped or not M.validMode(mode) then
         self:notice("Hosting needs a party/raid, out of combat, and no active game."); return false
     end
     self.mode, self.hostName, self.sid, self.slot, self.role = "host", self.name, self.env.token(), 1, "play"
     assert(token(self.sid), "Invalid session token")
-    self.state, self.revision, self.snapshotSeq, self.inputEpoch, self.nextGeneration = M.new(), 1, 0, 1, 1
+    self.state, self.revision, self.snapshotSeq, self.inputEpoch, self.nextGeneration = M.new(mode), 1, 0, 1, 1
+    self.selectedMode, self.bots = mode, {}
     self.inSeq, self.outSeq, self.roleSeq, self.acceptedRoleSeq, self.inputFloor = 0, 0, 0, 0, 1
     self.challenges, self.memberVersions = {}, {1}
     self.participants = { { name = self.name, token = self.env.token(), generation = 1, slot = 1, seq = 0, roleSeq = 0, seen = self.env.now() } }
@@ -205,11 +295,14 @@ function methods:lobbyList()
     for name, info in pairs(self.lobbies) do if now - info.seen <= 15 and self.roster[name] then list[#list + 1] = info end end
     table.sort(list, function(a, b) return a.name < b.name end); return list
 end
-function methods:join(hostName, sid, role)
+function methods:join(hostName, sid, role, expectedMode)
     role = role or "play"
     if not roleOK(role) or self.mode ~= "idle" or self.combat or not self.grouped or hostName == self.name then return false end
     local lobby = self.lobbies[hostName]
     if not lobby or lobby.sid ~= sid or self.env.now() - lobby.seen > 15 or not self.roster[hostName] then return false end
+    expectedMode = expectedMode or lobby.mode
+    if not M.validMode(expectedMode) or expectedMode ~= lobby.mode then return false end
+    self.expectedMode, self.protectionSeq = expectedMode, 0
     self.mode, self.hostName, self.sid, self.role, self.requestedRole = "joining", hostName, sid, role, role
     self.joinToken, self.joinStarted, self.nextJoin = self.env.token(), self.env.now(), 0
     assert(token(self.joinToken), "Invalid join token")
@@ -221,12 +314,12 @@ function methods:advertise()
     local now = self.env.now()
     if self.lastAdvert and now - self.lastAdvert < 2 then return end
     self.lastAdvert = now
-    self:enqueue("advert", packet("A", self.sid, phases[self.state.phase], self:count(), self:spectatorCount()), 1)
+    self:enqueue("advert", packet("A", self.sid, phases[self.state.phase], self:count(), self:spectatorCount(), modeCode(self.state.mode), self:botCount()), 1)
 end
 function methods:sendMember(id)
     local m = self.participants[id]
     self:enqueue("member" .. id, packet("M", self.sid, self.memberVersions[id] or self.revision, id,
-        m and m.name or "-", m and m.token or "-", m and m.generation or 0, m and m.slot or 0, m and m.roleSeq or 0), 2)
+        m and m.name or "-", m and m.token or "-", m and m.generation or 0, m and m.slot or 0, m and m.roleSeq or 0, modeCode(self.state.mode)), 2)
 end
 function methods:broadcastMembers()
     -- Compatibility helper: bounded coalesced records, never a per-client full roster.
@@ -235,7 +328,8 @@ end
 function methods:snapshot()
     if self.snapshotSeq >= 999999 then self:leave(); return end
     -- Never replace half a pending snapshot: finish it before capturing a new one.
-    if self.queue.state1 or self.queue.state2 or #self.queueOrder > N.MAX_QUEUE - N.MAX_CHUNKS then return end
+    for i = 1, N.MAX_CHUNKS do if self.queue["state" .. i] then return end end
+    if #self.queueOrder > N.MAX_QUEUE - N.MAX_CHUNKS then return end
     self.snapshotSeq = self.snapshotSeq + 1
     for i, text in ipairs(N.encodeState(self.state, self.sid, self.snapshotSeq, self.inputEpoch, self.revision, self.participants)) do
         self:enqueue("state" .. i, text, 1)
@@ -270,7 +364,23 @@ function methods:setCombat(inCombat)
         self.state.paused = self.combat
         if changed and self.mode == "host" then self:bumpEpoch() end
     end
+    if changed and (self.mode == "client" or self.mode == "joining") then
+        self.protectionSeq = math.min(999999, (self.protectionSeq or 0)+1)
+        self.nextKeepalive = 0
+    end
     self:notice()
+end
+-- Adapter supplies true for real WoW combat; missing roster information must not revoke a notify.
+function methods:setMemberCombat(name, inCombat)
+    if self.mode ~= "host" then return false end
+    for _, member in pairs(self.participants) do
+        if member.name == name and member.slot then
+            member.rosterCombat = inCombat and true or false
+            self.state.players[member.slot].protected = member.rosterCombat or member.notifiedCombat or false
+            return true
+        end
+    end
+    return false
 end
 function methods:setRole(role)
     if not roleOK(role) or self.mode ~= "client" then return false end
@@ -303,6 +413,8 @@ local function findMember(self, sender)
 end
 local function freeSlot(self)
     for slot = 2, 25 do if not self.members[slot] then return slot end end
+    -- Humans always take precedence; evict the oldest bot, not a physical member.
+    if self:removeAI() then for slot = 2, 25 do if not self.members[slot] then return slot end end end
 end
 function methods:pruneAssemblies(now)
     for seq, a in pairs(self.assemblies) do
@@ -331,7 +443,11 @@ function methods:receiveState(f, now)
     self.assemblies[seq] = nil
     local state = N.decodeState(table.concat(a.parts))
     if not state or (self.state and (state._epoch < self.state._epoch or state._revision < self.state._revision)) then return false end
+    if (self.mode == "joining" or self.mode == "client") and self.expectedMode and state.mode ~= self.expectedMode then
+        self:reset("Lobby mode changed. Review the mode and join again."); return false
+    end
     self.state, self.inSeq, self.lastSnapshot = state, seq, now
+    self:rebuildMembers()
     if self.mode == "client" and self.ownMemberID and not state._mapping[self.ownMemberID]
         and state._revision >= (self.memberVersions[self.ownMemberID] or 0) then
         self:reset("Removed from lobby or connection expired. Find and Join to reconnect."); return true
@@ -343,12 +459,12 @@ function methods:receive(sender, text)
         or type(text) ~= "string" or #text > N.MAX_BYTES or #text < 4 then return false end
     -- Every raid broadcast reaches every client. Discard peer gameplay before
     -- allocating a bucket or splitting fields; only discovery is peer-visible.
-    if self.mode ~= "host" and sender ~= self.hostName and text ~= "R2|Q" and string.sub(text, 1, 5) ~= "R2|A|" then return false end
+    if self.mode ~= "host" and sender ~= self.hostName and text ~= "R3|Q" and string.sub(text, 1, 5) ~= "R3|A|" then return false end
     local now = self.env.now(); local bucket = self.receiveBuckets[sender] or { tokens = 24, time = now }
     self.receiveBuckets[sender] = bucket
     bucket.tokens = math.min(24, bucket.tokens + math.max(0, now - bucket.time) * 16); bucket.time = now
     if bucket.tokens < 1 then return false end; bucket.tokens = bucket.tokens - 1
-    local f = split(text, "|"); if f[1] ~= "R2" then return false end
+    local f = split(text, "|"); if f[1] ~= "R3" then return false end
     local kind = f[2]
     if kind == "Q" and #f == 2 then
         if self.mode == "host" and (not self.lastAdvert or now - self.lastAdvert >= 2) then self:advertise() end
@@ -356,17 +472,18 @@ function methods:receive(sender, text)
     end
     if not token(f[3]) then return false end
     if kind == "A" then
-        local count, spectators = integer(f[5], 1, 25), integer(f[6], 0, 39)
-        if #f ~= 6 or not phaseNames[f[4]] or not count or not spectators or count + spectators > 40 then return false end
+        local count, spectators, bots = integer(f[5], 1, 25), integer(f[6], 0, 39), integer(f[8], 0, 5)
+        if #f ~= 8 or not phaseNames[f[4]] or not modeNames[f[7]] or not count or not spectators or not bots
+            or bots >= count or count-bots+spectators > 40 then return false end
         if not self.lobbies[sender] then
             local n = 0; for _ in pairs(self.lobbies) do n = n + 1 end; if n >= 8 then return false end
         end
-        self.lobbies[sender] = { name = sender, sid = f[3], phase = phaseNames[f[4]], count = count, spectators = spectators, seen = now }
+        self.lobbies[sender] = { name = sender, sid = f[3], phase = phaseNames[f[4]], count = count, spectators = spectators, bots = bots, mode = modeNames[f[7]], seen = now }
         self:notice(); return true
     end
     if f[3] ~= self.sid then return false end
     if self.mode == "host" then
-        if kind == "J" and #f == 5 and token(f[4]) and (f[5] == "p" or f[5] == "s") then
+        if kind == "J" and #f == 6 and token(f[4]) and (f[5] == "p" or f[5] == "s") and modeNames[f[6]] == self.state.mode then
             local id, member = findMember(self, sender)
             if member and member.token == f[4] then
                 -- Never refresh liveness or mutate a membership from replayed J.
@@ -379,7 +496,7 @@ function methods:receive(sender, text)
             else
                 if self.nextGeneration >= 999999 then return false end
                 self.nextGeneration = self.nextGeneration + 1
-                challenge = { token = f[4], generation = self.nextGeneration, role = f[5], created = now }
+                challenge = { token = f[4], generation = self.nextGeneration, role = f[5], mode = self.state.mode, created = now }
                 self.challenges[sender] = challenge
             end
             if not challenge.sent or now - challenge.sent >= 12 then
@@ -394,7 +511,7 @@ function methods:receive(sender, text)
                 if not member.lastJoinReply or now - member.lastJoinReply >= 4 then self:sendMember(id); member.lastJoinReply = now end
                 member.seen = now; return true
             end
-            if not gen or not challenge or challenge.token ~= f[4] or challenge.generation ~= gen or now - challenge.created > 60 then return false end
+            if not gen or not challenge or challenge.token ~= f[4] or challenge.generation ~= gen or now - challenge.created > 60 or challenge.mode ~= self.state.mode then return false end
             if not id then for i = 2, 40 do if not self.participants[i] then id = i; break end end end
             if not id then return false end
             local slot = member and member.slot
@@ -408,7 +525,14 @@ function methods:receive(sender, text)
         end
         local id, member = findMember(self, sender)
         if not member or member.token ~= f[4] or integer(f[5], 1, 999999) ~= member.generation then return false end
-        if kind == "K" and #f == 5 then member.seen = now; return true end
+        if kind == "K" and #f == 7 then
+            local seq, combat = integer(f[6], 0, 999999), integer(f[7], 0, 1)
+            if not seq or not combat or seq < (member.protectionSeq or 0) then return false end
+            if seq == (member.protectionSeq or 0) and member.notifiedCombat ~= nil and member.notifiedCombat ~= (combat == 1) then return false end
+            member.protectionSeq, member.notifiedCombat, member.seen = seq, combat == 1, now
+            if member.slot then self.state.players[member.slot].protected = member.notifiedCombat or member.rosterCombat or false end
+            return true
+        end
         if kind == "L" and #f == 5 then self:remove(id); return true end
         if kind == "R" and #f == 7 and (f[7] == "p" or f[7] == "s") then
             local seq = integer(f[6], 1, 999999)
@@ -421,7 +545,8 @@ function methods:receive(sender, text)
             member.roleSeq = seq
             if f[7] == "s" and member.slot then M.removePlayer(self.state, member.slot); member.slot = nil
             elseif f[7] == "p" and not member.slot then
-                member.slot = freeSlot(self); if member.slot then M.addPlayer(self.state, member.slot) end
+                member.slot = freeSlot(self)
+                if member.slot then M.addPlayer(self.state, member.slot); self.state.players[member.slot].protected = member.notifiedCombat or member.rosterCombat or false end
             end
             self:changedMember(id); return true
         end
@@ -441,7 +566,7 @@ function methods:receive(sender, text)
         local gen = integer(f[6], 1, 999999); if not gen or (self.generation and gen < self.generation) then return false end
         self.generation, self.nextJoin = gen, 0; return true
     end
-    if kind == "M" and #f == 10 then
+    if kind == "M" and #f == 11 and modeNames[f[11]] then
         local revision, id = integer(f[4], 1, 999999), integer(f[5], 1, 40)
         local gen, slot, roleSeq = integer(f[8], 0, 999999), integer(f[9], 0, 25), integer(f[10], 0, 999999)
         if not revision or not id or not gen or not slot or not roleSeq or revision <= (self.memberVersions[id] or 0) then return false end
@@ -463,10 +588,12 @@ function methods:receive(sender, text)
         self:rebuildMembers()
         if f[6] == self.name and f[7] == self.joinToken and gen == self.generation then
             local first = self.mode == "joining"
+            if first and modeNames[f[11]] ~= self.expectedMode then self:reset("Lobby mode changed. Review the mode and join again."); return false end
+            self.expectedMode = self.expectedMode or modeNames[f[11]]
             self.slot, self.role, self.mode = slot > 0 and slot or nil, slot > 0 and "play" or "spectate", "client"
             self.acceptedRoleSeq, self.ownMemberID = roleSeq, id
             self.lastSnapshot = self.lastSnapshot or now
-            if first then self.nextKeepalive = now + 1 + (gen % 40) * 0.15 end
+            if first then self.nextKeepalive = self.combat and 0 or now + 1 + (gen % 40) * 0.15 end
             if self.roleSeq <= roleSeq then
                 if self.role == "spectate" and self.requestedRole == "play" then self:notice("Player slots full (25). Joined as spectator; choose Play when a slot opens.")
                 else self:notice(self.role == "play" and "Joined as player! Shared city, personal score." or "Spectating: no avatar, score or gameplay input.") end
@@ -485,17 +612,30 @@ function methods:tick(elapsed)
     for name, info in pairs(self.lobbies) do if now - info.seen > 15 then self.lobbies[name] = nil end end
     self:pruneAssemblies(now)
     if self.mode == "host" or self.mode == "solo" then
+        -- Reconcile native group combat BEFORE a hazard/AI tick, not one tick
+        -- afterwards; notification latency must not create a damage window.
+        if self.mode == "host" then
+            for id = 2, 40 do
+                local member = self.participants[id]
+                if member and member.slot then
+                    if self.env.inCombat then member.rosterCombat = self.env.inCombat(member.name) and true or false end
+                    self.state.players[member.slot].protected = member.notifiedCombat or member.rosterCombat or now-member.seen > 12
+                end
+            end
+        end
         local oldPhase = self.state.phase; M.tick(self.state, math.min(math.max(elapsed, 0), 0.5))
         if self.mode == "host" then
             if oldPhase ~= "play" and self.state.phase == "play" then if not self:bumpEpoch() then return end end
             for id = 2, 40 do
-                if self.participants[id] and now - self.participants[id].seen > 35 then self:remove(id) end
+                local member = self.participants[id]
+                -- An unresponsive guest was protected above; remove after timeout.
+                if member and now - member.seen > 35 then self:remove(id) end
                 if self.mode ~= "host" then return end
             end
             for name, c in pairs(self.challenges) do if now - c.created > 60 then self.challenges[name] = nil end end
             if now >= self.nextAdvert then self.nextAdvert = now + 5; self:advertise() end
             if now >= self.nextMember then
-                self.nextMember = now + 0.5
+                self.nextMember = now + 1
                 for _ = 1, 40 do
                     local id = self.memberCursor; self.memberCursor = id % 40 + 1
                     if self.memberVersions[id] then self:sendMember(id); break end
@@ -508,13 +648,17 @@ function methods:tick(elapsed)
         elseif now >= self.nextJoin then
             self.nextJoin = now + 4
             self:enqueue("join", self.generation and packet("B", self.sid, self.joinToken, self.generation)
-                or packet("J", self.sid, self.joinToken, roleCode(self.role)), 2)
+                or packet("J", self.sid, self.joinToken, roleCode(self.role), modeCode(self.expectedMode)), 2)
         end
     elseif self.mode == "client" then
         if now - (self.lastSnapshot or now) > 20 then self:reset("Host timed out. No migration; find or host a new game.")
         else
+            local p = self.state and self.slot and self.state.players[self.slot]
+            local unconfirmed = p and p.protected ~= (self.combat and true or false)
+            if unconfirmed and now >= (self.lastProtectionSend or -1) + 1 then self.nextKeepalive = 0 end
             if now >= (self.nextKeepalive or 0) then
-                self.nextKeepalive = now + 8; self:enqueue("keepalive", packet("K", self.sid, self.joinToken, self.generation), 1)
+                self.lastProtectionSend = now
+                self.nextKeepalive = now + 8; self:enqueue("keepalive", packet("K", self.sid, self.joinToken, self.generation, self.protectionSeq or 0, self.combat and 1 or 0), 1)
             end
             if self.requestedRole and self.roleSeq > self.acceptedRoleSeq and now >= (self.nextRole or 0) then
                 self.nextRole = now + 4; self:enqueue("role", packet("R", self.sid, self.joinToken, self.generation, self.roleSeq, roleCode(self.requestedRole)), 2)

@@ -25,9 +25,10 @@ function Input.create(app, root)
     self.supported = type(frame.EnableKeyboard) == "function" and type(frame.SetPropagateKeyboardInput) == "function"
     function self:canPlay()
         local net, s = app.net, app.net.state
+        local p=s and net.slot and s.players[net.slot]
         return root:IsShown() and not net.combat and not (InCombatLockdown and InCombatLockdown())
             and net.mode ~= "idle" and net.mode ~= "joining" and net.role ~= "spectate" and net.requestedRole ~= "spectate"
-            and net.slot ~= nil and s and s.players[net.slot] ~= nil and s.phase == "play" and not s.paused
+            and p ~= nil and not p.protected and (p.ko or 0)<=0 and (p.hp or 100)>0 and s.phase == "play" and not s.paused
     end
     function self:release(reason)
         self.focused, self.held, self.nextAction = false, {}, 0
@@ -36,6 +37,10 @@ function Input.create(app, root)
         if self.supported and not (InCombatLockdown and InCombatLockdown()) then
             frame:SetPropagateKeyboardInput(true)
         end
+    end
+    function self:shown()
+        -- Reopening clears the stale hidden-window reason, never auto-captures.
+        self:release(app.net.role=="spectate" and "Watching only — no captured keys" or "Click PLAY to capture keys")
     end
     function self:grab()
         if not self.supported then self.reason = "Keyboard unavailable — use mouse controls"; return false end
