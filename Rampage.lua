@@ -28,12 +28,17 @@ end
 function app.refreshRoster()
     if not app.net then return end
     local roster = { [app.net.name] = true }
+    app.rosterUnits = { [app.net.name] = "player" }
     if IsInRaid() then
         for i = 1, math.min(40, GetNumGroupMembers()) do
-            local name = unitIdentity("raid" .. i); if name then roster[name] = true end
+            local unit="raid" .. i
+            local name = unitIdentity(unit); if name then roster[name] = true; app.rosterUnits[name]=unit end
         end
     elseif IsInGroup() then
-        for i = 1, 4 do local name = unitIdentity("party" .. i); if name then roster[name] = true end end
+        for i = 1, 4 do
+            local unit="party" .. i
+            local name = unitIdentity(unit); if name then roster[name] = true; app.rosterUnits[name]=unit end
+        end
     end
     app.net:setRoster(roster, app.networkEnabled and channel() ~= nil)
 end
@@ -59,6 +64,12 @@ local function initialize()
     local send = C_ChatInfo and C_ChatInfo.SendAddonMessage or SendAddonMessage
     app.networkEnabled = register and send and register(addon.Protocol.PREFIX) ~= false or false
     app.net = addon.Protocol.new({ name = name, now = app.now, token = newToken,
+        -- Read-only fallback protects real group members even when their combat
+        -- notify is still queued. AI names are never placed in the WoW roster.
+        inCombat = function(memberName)
+            local unit=app.rosterUnits and app.rosterUnits[memberName]
+            return unit and UnitAffectingCombat and UnitAffectingCombat(unit) or false
+        end,
         send = function(payload)
             local distribution = channel()
             if app.networkEnabled and distribution and #payload <= 255 then
@@ -67,7 +78,10 @@ local function initialize()
         end,
         changed = function()
             app.persist()
-            if app.input and not app.input:canPlay() then app.input:release("Game changed — keys released") end
+            if app.input then
+                if not app.input:canCapture() then app.input:release("Game changed — keys released")
+                else app.input:syncPhase() end
+            end
             if app.sound then app.sound:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
         end })
     app.sound = addon.Sound.create(app)
@@ -85,20 +99,27 @@ local function slash(input)
     local command, argument = string.match(input or "", "^%s*(%S*)%s*(.-)%s*$")
     command = string.lower(command or "")
     if command == "help" then
-        localMessage("/rampage — toggle window. /rampage solo | host | find | join [Name-Realm] | spectate [Name-Realm] | play | start | leave")
-        localMessage("Click PLAY for WASD/arrows + hold Space. Escape releases keys. Climb and smash each floor twice; flatten towers, then punch the boss. Four stages; 25 players + 15 spectators.")
+        localMessage("/rampage — toggle window. /rampage solo [coop|brawl] | host [coop|brawl] | find | join [Name-Realm] | spectate [Name-Realm] | play | start | leave")
+        localMessage("Click PLAY for WASD/arrows + hold Space. Escape releases keys. Dodge marked boss lanes! Co-op is default; Brawl is optional PvP. Host / solo can add up to 5 AI within 25 actors; spectators have no avatar or controls.")
         localMessage("Open window discovers lobbies; joining is opt-in. No public chat or global bindings. Combat hides/releases keys; host combat pauses everyone. Closing does not leave. Optional local BlasterMaster defaults OFF.")
     elseif command == "leave" then
         if app.input then app.input:release("Left game — keys released") end
         app.persist(); app.net:leave(); addon.UI.render()
-    elseif command == "solo" then
-        if app.net:solo() then showWindow() end
-    elseif command == "host" then
-        app.refreshRoster(); if app.net:host() then showWindow() else localMessage(app.net.status) end
+    elseif command == "solo" or command == "host" then
+        local mode=string.lower(argument)
+        if mode=="" then mode="coop" end
+        if mode~="coop" and mode~="brawl" then localMessage("Mode must be coop or brawl. Co-op is the default."); return end
+        if command=="host" then app.refreshRoster() end
+        local started=command=="solo" and app.net:solo(mode) or command=="host" and app.net:host(mode)
+        if started then showWindow() else localMessage(app.net.status) end
     elseif command == "find" then
         app.refreshRoster(); app.net:discover(); showWindow()
     elseif command == "play" then
-        if app.net.role == "spectate" and app.net.setRole then app.net:setRole("play") end
+        if app.net.role == "spectate" and app.net.setRole then
+            if app.net.state and app.net.state.mode=="brawl" then
+                localMessage("Brawl is PvP. Click JOIN BRAWL to switch from watching to playing.")
+            else app.net:setRole("play") end
+        end
         showWindow() -- Chat commands do not capture keys: click PLAY afterward.
     elseif command == "join" or command == "spectate" then
         if command == "spectate" and app.net.mode ~= "idle" then
@@ -110,7 +131,11 @@ local function slash(input)
         for _, lobby in ipairs(app.net:lobbyList()) do
             if argument == "" or string.lower(lobby.name) == string.lower(argument) then chosen = lobby; break end
         end
-        if chosen and app.net:join(chosen.name, chosen.sid, command == "spectate" and "spectate" or "play") then showWindow()
+        if chosen and command=="join" and chosen.mode=="brawl" then
+            addon.UI.lobbyName=chosen.name; showWindow()
+            localMessage("This lobby is BRAWL (PvP). Click JOIN BRAWL to consent, or SPECTATE to watch."); return
+        end
+        if chosen and app.net:join(chosen.name, chosen.sid, command == "spectate" and "spectate" or "play", chosen.mode or "coop") then showWindow()
         else localMessage("No matching recent lobby. Use /rampage find, select a host, then Join.") end
     elseif command == "start" then
         app.net:start(); showWindow()

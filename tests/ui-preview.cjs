@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
 const value = (key, fallback) => args.includes(key) ? args[args.indexOf(key) + 1] : fallback;
 const scene = value('--scene', 'solo');
-if (!['solo', 'raid', 'boss', 'spectator', 'victory'].includes(scene)) throw new Error('Unknown scene');
+if (!['solo', 'raid', 'boss', 'spectator', 'victory', 'brawl', 'hazard', 'ko'].includes(scene)) throw new Error('Unknown scene');
 const L = lauxlib.luaL_newstate();
 lualib.luaL_openlibs(L);
 function execute(source, name) {

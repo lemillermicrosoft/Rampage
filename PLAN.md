@@ -1,34 +1,26 @@
-# Rampage — FOUR MORE BOSSES!
+# Rampage — chaos iteration plan
 
 ## Vision
-A cooperative, opt-in Toast raid-break arcade: original expressive monsters flatten a shared city and four silly bosses. Keep raid controls safe, joining simple, and changes small enough to playtest quickly.
+Keep the friendly city-smashing raid-break game, but give monsters something to react to: helpful computer teammates, optional mutual Brawl, health/quick respawns and bosses with readable attacks. Co-op remains the default. All damage stays inside the addon minigame.
 
-## Current delivered scope
-- Original first playable: solo, shared destructible towers, move/climb/punch, four bosses, personal fame and host-authoritative party/raid lobbies.
-- Issue #4 iteration: **25 active / 40 total**, explicit Spectate and role switching, late join with bounded R2 chunked snapshots, one-click Join Game / Host & Start with visible-window discovery.
-- Explicit keyboard PLAY capture, WASD/arrows/Space repeat, Escape/focus/chat/hide/leave/combat releases, physical-key reconciliation, compact mouse fallback; no binding changes.
-- Warm arcade city, varied stepped creature geometry, local highlight, 25-player hover chips/overlap offsets, boss HP/shield, pooled particle/destruction/stage/victory effects, fit-to-screen scale.
-- Optional default-off external BlasterMaster role accessor; local throttled cues and spectator-major-event mode, no bundled game audio or global volume edits.
+## Bounded scope delivered
+- Host/solo Add AI / Remove AI, one at a time, at most five in the 25-actor cap. Deterministic local logic; no LLM, physical roster impersonation or real WoW actions. Humans take priority over filler AI.
+- Optional advertised Co-op / Brawl mode with explicit Join Brawl consent. Owner changes only before Start or replay and with no real guests joined; never silently convert a running/joined game into PvP.
+- 100HP, bounded same-height/adjacent Brawl punches, separate KO credit, four-second KO, three-second respawn shield, visible health/hurt/KO/immunity cues.
+- Four repeated boss lane patterns, seven-second warning, single damage impact and recovery. Boss attacks before/after shield removal; legal dodging and forgiving damage.
+- R3 snapshots carry bots/HP/clock/mode/hazards atomically within bounded packets, queues and the existing per-sender budget. Guest combat protection via authenticated notification and read-only physical-roster fallback, reconciled before simulation.
+- Consistent button interaction states, host AI controls, font-safe ASCII fallback controls and truthful visible-window key status. Existing capture/escape/chat/combat/audio safeguards retained.
 
-## Implementation and tests
-- [x] Separate deterministic model, protocol, input, sound, UI and WoW adapter modules.
-- [x] Preserve actual roster/host/session/generation/sequence authority and bounded packet/queue/fragment state.
-- [x] Exercise 25 actors + 15 spectators in a finite-budget 40-node broadcast simulator with loss/reordering, reconnect, four bosses, replay and combat pause.
-- [x] Integrate strict input/audio/UI lifecycle mocks and fixed frame/texture pools.
-- [x] Lua 5.1 grammar checks and Fengari execution; no native VM proof implied.
-- [x] Export and inspect actual-UI mock geometry scenes, not separate concept art.
-- [ ] Actual TBC input propagation/taint/taskbar focus and visual scale verification.
-- [ ] Real two-client baseline, then 25-player raid performance/play-feel verification.
-- [ ] Actual local sound playback/remapping and mute verification.
+## Verification
+- [x] Deterministic gameplay tests including AI-only four-boss completion and AI being hurt/KO'd.
+- [x] Consent, authority, spectator safety, cooldown/range/KO/respawn, host pause, guest protection and stale/lost/reordered protocol tests.
+- [x] Forty-node finite-budget simulation with 20 human actors +5AI +20spectators through four bosses/replay; maximum-name join/reconnect and warning-blackout fixtures.
+- [x] Integrated real TOC mocked UI/input/audio tests; fixed pools and actual geometry preview export/inspection.
+- [ ] Real native AI/Brawl/hazard visual playtest, keyboard/focus/taint and audio.
+- [ ] Real two-client response/play balance, then larger raid transport behavior.
 
-## Important tradeoff
-The traffic-safe R2 host currently sends complete worlds every **1.25 seconds**. Visual animation is smoother, but remote authoritative input feedback is not fast-action-game latency. Measure this with the guild before tuning the wire format/cadence or adding prediction. No claim that the simulated 40-node traffic proves Blizzard transport behavior.
+## Known tradeoffs
+Worlds still arrive every 1.25s, not at animation speed; R3 requires three fragments and a slower name carousel. Seven-second warnings exceed the tested4s worst world gap, but arbitrary loss can still hide a warning. Brawl is forgiving, noncompetitive chaos, not precision network fighting. Simple AI pathing/scuffle/dodge behavior is intentionally bounded; no complex boss phases, host migration or progression expansion.
 
-## Deliverables and gates
-Preserve original candidates for rollback. The owner authorized publishing current files on October 29, 2026 and supplied CurseForge project 1772524. Merge approved PR #3, infer the release version via the existing auto-release pipeline, validate portable ZIP/runtime version/tests, and publish to GitHub plus CurseForge for TBC 2.5.6. Verify upload/publication states separately. No forced client reload or external SavedVariables edits; outstanding native checks remain explicit.
-
-## Post-playtest priorities
-1. Fix actual native focus/taint/rendering bugs first.
-2. Measure/tune remote response cadence within a realistic addon traffic budget.
-3. Refine monster animation, stage variation, optional original sound cues and tiny cooperative mechanics based on guild feedback.
-4. Host migration, hazards, rich progression and complex matchmaking remain out of this quick iteration.
+## Delivery and release boundary
+The owner explicitly authorized publishing reviewed AI/Brawl candidate ac5bef3 on October 29, 2026 at10:34. Publish PR #6 through the existing default release pipeline, assign a new matching runtime/TOC version and verify GitHub/CurseForge outcomes and ZIP hashes. Every machine must upgrade from old R2/v0.2.0 to the same R3 release. Preserve original tags/archives and leave the main checkout on the new release for the owner's and wife's compatibility. No forced reload, junction swap or SavedVariables edits. Roaming/more visibly attacking bosses are a separate next iteration; unique levels are later backlog. Neither is included or automatically authorized for publishing here.

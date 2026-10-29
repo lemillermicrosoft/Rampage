@@ -5,6 +5,7 @@ Addon = {}
 local frames, textures, fonts, sent, messages = {}, {}, {}, {}, {}
 local now, grouped, raided, combat, loggedIn = 100, false, false, false, false
 local editFocus, windowFocus, altDown, ctrlDown = nil, true, false, false
+local unitCombat={}
 local methods = {}
 local function newObject(kind, name, parent)
     local object = setmetatable({ kind = kind, name = name, parent = parent, shown = true, enabled = true,
@@ -84,6 +85,7 @@ function IsInRaid() return raided end
 function IsInGroup() return grouped end
 function GetNumGroupMembers() return grouped and 3 or 0 end
 function InCombatLockdown() return combat end
+function UnitAffectingCombat(unit) return unitCombat[unit] or false end
 function IsLoggedIn() return loggedIn end
 function GetCurrentKeyBoardFocus() return editFocus end
 function ChatEdit_GetActiveWindow() return nil end
@@ -131,6 +133,11 @@ function runWoWSmoke()
         SlashCmdList.RAMPAGE("solo"); assert(ui.root:IsShown()); eq(app.net.mode, "solo")
         eq(ui.root:GetWidth(), 900); eq(#ui.monsters, 25); eq(#ui.scores, 25); eq(#ui.floors, 9)
         assert(not app.input.focused); assert(not app.input.frame:IsShown()); eq(RampageDB.useBlasterMaster,false)
+        eq(app.net.state.mode,"coop"); assert(ui.coop.selected and not ui.brawl.selected)
+        assert(string.find(ui.captureStatus:GetText(),"Click PLAY",1,true))
+        assert(not string.find(ui.captureStatus:GetText(),"Window hidden",1,true))
+        local labels={"A/Left","W/Up","Space","S/Down","D/Right"}
+        for i,b in ipairs(ui.controls) do eq(b.label:GetText(),labels[i]); assert(not b.label:GetText():find("[^%z\1-\127]")) end
         eq(ui.root:GetPoint(), "CENTER") -- invalid persisted anchor ignored
         click(ui.controls[5]); eq(app.net.state.players[1].x, 2)
         step(0.25); click(ui.controls[3]); eq(app.net.state.hp[1], 1); eq(RampageDB.best, 10)
@@ -150,6 +157,12 @@ function runWoWSmoke()
         f.scripts.OnKeyUp(f,"SPACE"); eq(f.propagate,false)
         f.scripts.OnKeyUp(f,"D"); local n=#calls; step(0.5); eq(#calls,n)
         f.scripts.OnKeyDown(f,"I"); eq(f.propagate,true); assert(not input.focused)
+        -- Every known physical key is consumed while the local capture is live.
+        -- This is mock routing evidence, not attribution of WoW's red target text.
+        for _,key in ipairs({"A","LEFT","W","UP","SPACE","S","DOWN","D","RIGHT"}) do
+            assert(input:grab()); f.scripts.OnKeyDown(f,key); eq(f.propagate,false)
+            f.scripts.OnKeyUp(f,key); eq(f.propagate,false); input:release()
+        end
         click(ui.capture); f.scripts.OnKeyDown(f,"ENTER"); eq(f.propagate,true); assert(not input.focused)
         click(ui.capture); f.scripts.OnKeyDown(f,"W"); editFocus={}; step(0.05)
         assert(not input.focused); eq(f.propagate,true); assert(next(input.held)==nil)
@@ -157,11 +170,48 @@ function runWoWSmoke()
         click(ui.capture); f.scripts.OnKeyDown(f,"ESCAPE"); assert(not input.focused); eq(f.propagate,true)
         app.net.action=action
     end)
+    check("WoW mock: chosen controls persist across cities without held replay or safety recapture", function()
+        local net,input=app.net,app.input; local f=input.frame
+        local oldState,oldAction=net.state,net.action
+        local calls=0; net.action=function() calls=calls+1; return true end
+        local function fresh(capture)
+            input:release(); net.state=Addon.Model.new(); Addon.Model.addPlayer(net.state,1); Addon.Model.start(net.state)
+            if capture then assert(input:grab()) end
+        end
+        local function clear()
+            net.state.phase,net.state.wait="clear",0.2
+            net:notice(); input:update(0.01)
+        end
+        local function nextCity()
+            Addon.Model.tick(net.state,0.2); net:notice(); input:update(0.01)
+            eq(net.state.stage,2); eq(net.state.phase,"play")
+        end
+        fresh(true); f.scripts.OnKeyDown(f,"D"); local before=calls
+        clear(); assert(input.focused and f:IsShown()); assert(not input:canPlay()); assert(next(input.held)==nil)
+        f.scripts.OnKeyDown(f,"D"); f.scripts.OnKeyDown(f,"SPACE"); eq(f.propagate,false); eq(calls,before)
+        nextCity(); assert(input.focused); eq(calls,before)
+        f.scripts.OnKeyDown(f,"D"); f.scripts.OnKeyDown(f,"SPACE"); eq(calls,before) -- OS repeat blocked until key-up
+        f.scripts.OnKeyUp(f,"D"); f.scripts.OnKeyUp(f,"SPACE"); eq(f.propagate,false)
+        f.scripts.OnKeyDown(f,"D"); eq(calls,before+1); f.scripts.OnKeyUp(f,"D")
+        fresh(false); clear(); nextCity(); assert(not input.focused) -- mouse selection stays mouse
+        for _,reason in ipairs({"escape","close","combat","chat","shortcut","focus"}) do
+            fresh(true); clear(); assert(input.focused)
+            if reason=="escape" then f.scripts.OnKeyDown(f,"ESCAPE")
+            elseif reason=="close" then ui.root:Hide(); ui.root:Show()
+            elseif reason=="combat" then combat=true; event("PLAYER_REGEN_DISABLED"); combat=false; event("PLAYER_REGEN_ENABLED")
+            elseif reason=="chat" then editFocus={}; input:update(0.01); editFocus=nil
+            elseif reason=="shortcut" then f.scripts.OnKeyDown(f,"I")
+            else windowFocus=false; input:update(0.01); windowFocus=true end
+            assert(not input.focused,reason); nextCity(); assert(not input.focused,reason.." recaptured")
+        end
+        input:release(); net.state,net.action=oldState,oldAction
+    end)
     check("WoW mock: keyboard alt-tab, long stall, hidden, leaving-world and spectator release", function()
         local input=app.input; local f=input.frame
         assert(input:grab()); f.scripts.OnKeyDown(f,"SPACE"); windowFocus=false; step(0.05)
         assert(not input.focused); assert(next(input.held)==nil); eq(f.propagate,true); windowFocus=true
         assert(input:grab()); altDown=true; f.scripts.OnKeyDown(f,"TAB"); assert(not input.focused); altDown=false
+        assert(input:grab()); ctrlDown=true; f.scripts.OnKeyDown(f,"D"); assert(not input.focused); eq(f.propagate,true); ctrlDown=false
         -- Focus helper is not guaranteed in Classic: physical-key reconciliation
         -- must stop a missed key-up without relying on that mocked helper.
         local focusAPI=IsWindowFocused; IsWindowFocused=nil
@@ -178,6 +228,8 @@ function runWoWSmoke()
         assert(input:grab()); app.net.role,app.net.slot="spectate",nil; step(0.05)
         assert(not input.focused); assert(not input:grab()); assert(not input:action("P")); ui.render()
         assert(not ui.controls[3]:IsEnabled()); assert(not ui.capture:IsEnabled())
+        assert(not ui.health:IsShown() and not ui.healthBack:IsShown() and not ui.healthLabel:IsShown())
+        eq(ui.personal:GetText(),"SPECTATOR")
         app.net.role,app.net.slot=role,slot
         assert(input:grab()) -- leave focused for the combat test
     end)
@@ -194,14 +246,50 @@ function runWoWSmoke()
     end)
     check("WoW mock: 25-player fixed geometry pools after 500 animated renders", function()
         local frameCount, textureCount, fontCount = #frames, #textures, #fonts
+        eq(#ui.hazardLanes,7); eq(#ui.particles,72)
         for slot=2,25 do Addon.Model.addPlayer(app.net.state,slot); app.net.members[slot]={name="Crew"..slot.."-Realm"} end
         for i=1,500 do
             for slot=1,25 do local p=app.net.state.players[slot]; p.hit=i%1000; p.x=1+(slot+i)%7 end
+            app.net.state.hazard={phase=i%3==0 and "impact" or "warning",remaining=6,lanes={1,3,7},id=i}
             ui.burst(316,180,12,"hit"); step(0.05); ui.render()
         end
         for slot=2,25 do Addon.Model.removePlayer(app.net.state,slot); app.net.members[slot]=nil end
         eq(#frames, frameCount); eq(#textures, textureCount); eq(#fonts, fontCount)
         print("  Fixed UI allocation fixture: " .. frameCount .. " frames, " .. textureCount .. " textures, " .. fontCount .. " font strings")
+    end)
+    check("WoW mock: authoritative HP / KO / shield cues and seven warning / impact / recovery lanes", function()
+        local s=app.net.state; local p=s.players[1]
+        p.hp,p.maxHP,p.ko,p.invuln,p.kos=100,100,0,0,2
+        s.hazard={phase="warning",remaining=6,lanes={1,3,7},id=1}; ui.render()
+        local framesBefore,texturesBefore,fontsBefore=#frames,#textures,#fonts
+        assert(ui.hazardLanes[1]:IsShown() and ui.hazardLanes[3]:IsShown() and ui.hazardLanes[7]:IsShown())
+        assert(not ui.hazardLanes[2]:IsShown()); assert(ui.hazardText:GetText():find("IN 6s",1,true))
+        local flavors={}
+        for stage=1,4 do s.stage=stage; ui.render(); flavors[ui.hazardText:GetText()]=true end
+        local flavorCount=0; for _ in pairs(flavors) do flavorCount=flavorCount+1 end; eq(flavorCount,4)
+        s.stage=1; p.hp=35; ui.render(); assert(ui.monsters[1].hurt:IsShown()); eq(ui.health:GetWidth(),188*0.35)
+        assert(ui.team:GetText():find("2 KOs",1,true)); assert(ui.personal:GetText():find("YOUR FAME",1,true))
+        assert(app.input:grab()); p.hp,p.ko=0,3; app.input:update(0.01); ui.render()
+        assert(not app.input.focused and not app.input:action("P")); assert(not ui.controls[3]:IsEnabled())
+        assert(ui.healthLabel:GetText():find("respawn in 3s",1,true)); assert(ui.monsters[1].badge:GetText():find("KO",1,true))
+        p.hp,p.ko,p.invuln=100,0,2; ui.render(); assert(ui.controls[3]:IsEnabled()); assert(not app.input.focused)
+        assert(ui.healthLabel:GetText():find("SHIELD 2s",1,true))
+        s.hazard.phase,s.hazard.remaining="impact",0.8; ui.render(); assert(ui.hazardText:GetText():find("IMPACT",1,true))
+        for _=1,20 do ui.render() end; eq(p.hp,100) -- UI never inflicts damage.
+        s.hazard.phase,s.hazard.remaining="idle",4; ui.render(); assert(ui.hazardText:GetText():find("next warning in 4s",1,true))
+        for _,mark in ipairs(ui.hazardLanes) do assert(not mark:IsShown()) end
+        eq(#frames,framesBefore); eq(#textures,texturesBefore); eq(#fonts,fontsBefore)
+        p.invuln,p.kos=0,0; s.hazard=nil
+    end)
+    check("WoW mock: consistent hover / pressed / disabled / selected button treatment", function()
+        local b=ui.capture; ui.render(); local normal=b.base.color[1]
+        b.scripts.OnEnter(b); assert(b.hovered and b.base.color[1]>normal)
+        b.scripts.OnMouseDown(b); assert(b.pressed and b.base.color[1]<normal)
+        b.scripts.OnMouseUp(b); assert(not b.pressed)
+        b.scripts.OnLeave(b); assert(not b.hovered); eq(b.base.color[1],normal)
+        click(b); ui.render(); assert(app.input.focused and b.selected); click(b); assert(not b.selected)
+        app.net.state.players[1].ko=1; ui.render(); assert(not b:IsEnabled()); eq(b.alpha,0.38)
+        app.net.state.players[1].ko=0; ui.render()
     end)
     check("WoW mock: optional audio off/missing/None/failed SFX and no provider fallback", function()
         local t,calls=0,0
@@ -250,17 +338,32 @@ function runWoWSmoke()
         SlashCmdList.RAMPAGE("leave"); ui.root:Hide()
         grouped = true; event("GROUP_ROSTER_UPDATE")
         assert(app.net.roster["Friend-OtherRealm"] and app.net.roster["Friend-TestRealm"])
-        event("CHAT_MSG_ADDON", "OtherPrefix", "R2|A|abc|l|1|0", "PARTY", "Friend-OtherRealm")
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R2|A|abc|l|1|0", "GUILD", "Friend-OtherRealm")
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R2|A|abc|l|1|0", "PARTY", "Stranger-Realm")
+        event("CHAT_MSG_ADDON", "OtherPrefix", "R3|A|abc|l|1|0|c|0", "PARTY", "Friend-OtherRealm")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R3|A|abc|l|1|0|c|0", "GUILD", "Friend-OtherRealm")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R3|A|abc|l|1|0|c|0", "PARTY", "Stranger-Realm")
         eq(#app.net:lobbyList(), 0)
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R2|A|abc|l|1|0", "PARTY", "Friend-OtherRealm")
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R2|A|def|l|1|0", "PARTY", "Friend")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R3|A|abc|l|1|0|c|0", "PARTY", "Friend-OtherRealm")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R3|A|def|l|1|0|c|0", "PARTY", "Friend")
         eq(#app.net:lobbyList(), 2); assert(not ui.root:IsShown())
+    end)
+    check("WoW mock: local hurt audio is opt-in, authoritative, rare and spectator-quiet", function()
+        local t,calls=0,0
+        local state=Addon.Model.new(); Addon.Model.addPlayer(state,1); Addon.Model.start(state)
+        local a={db={useBlasterMaster=true},now=function() return t end,
+            net={state=state,slot=1,role="play",mode="solo",name="Local"}}
+        local sound=Addon.Sound.create(a)
+        BlasterMaster_GetSfxPath=function(role) eq(role,"combatStart"); return role end
+        PlaySoundFile=function() calls=calls+1; return true end
+        sound:observe(true); t=0.1; state.players[1].hp=90; sound:observe(true); eq(calls,1)
+        t=0.2; state.players[1].hp=80; sound:observe(true); eq(calls,1)
+        t=3; sound:observe(true); t=3.1; state.players[1].hp=70; sound:observe(true); eq(calls,1)
+        t=4.2; state.players[1].hp=60; sound:observe(true); eq(calls,2)
+        a.net.role,a.net.slot="spectate",nil; t=4.3; state.players[1].hp=50; sound:observe(true); eq(calls,2)
+        BlasterMaster_GetSfxPath,PlaySoundFile=nil,nil
     end)
     check("WoW mock: visible-only discovery, explicit Join/Spectate and auto-fit", function()
         ui.root:Show(); step(4.1); eq(app.net.mode,"idle")
-        local queries=0; for _,m in ipairs(sent) do if m.payload=="R2|Q" then queries=queries+1 end end
+        local queries=0; for _,m in ipairs(sent) do if m.payload=="R3|Q" then queries=queries+1 end end
         assert(queries>=1 and queries<=2,"open discovery is bounded and does not autojoin")
         local join, chosenRole=app.net.join,nil
         app.net.join=function(_,name,sid,role) chosenRole=role; assert(name and sid); return true end
@@ -292,7 +395,7 @@ function runWoWSmoke()
         click(ui.primary); eq(#joins,0); click(ui.spectate); eq(joins[1],"spectate")
         -- 24 +15: both admission choices work; phase=play proves join-in-progress UI.
         lobby.count,lobby.spectators=24,15; ui.render()
-        assert(ui.primary:IsEnabled() and ui.spectate:IsEnabled()); eq(ui.primary.label:GetText(),"JOIN GAME")
+        assert(ui.primary:IsEnabled() and ui.spectate:IsEnabled()); eq(ui.primary.label:GetText(),"JOIN CO-OP")
         click(ui.primary); eq(joins[2],"play"); click(ui.spectate); eq(joins[3],"spectate")
         -- Existing observers do not consume new total capacity when becoming active.
         lobby.spectators=16; net.mode,net.role="client","spectate"
@@ -301,8 +404,19 @@ function runWoWSmoke()
         click(ui.primary); eq(roles[1],"play"); eq(#joins,3)
         -- Ordinary ongoing game remains joinable after the full-lobby display clears.
         net.mode,net.state,net.role="idle",nil,nil; lobby.count,lobby.spectators=3,2; ui.render()
-        assert(ui.primary:IsEnabled() and ui.spectate:IsEnabled()); eq(ui.primary.label:GetText(),"JOIN GAME")
+        assert(ui.primary:IsEnabled() and ui.spectate:IsEnabled()); eq(ui.primary.label:GetText(),"JOIN CO-OP")
         click(ui.primary); eq(joins[4],"play")
+        -- AI consumes actor slots, never an actual 40-person group seat.
+        lobby.count,lobby.spectators,lobby.bots=24,16,5; ui.render()
+        assert(ui.primary:IsEnabled() and ui.spectate:IsEnabled())
+        -- A full actor roster with filler AI must still admit a human: engine
+        -- automatically vacates one AI without consuming another real seat.
+        lobby.count,lobby.spectators,lobby.bots=25,0,5; ui.render()
+        assert(ui.primary:IsEnabled()); eq(ui.primary.label:GetText(),"JOIN CO-OP")
+        net.mode,net.role,net.state="client","spectate",Addon.Model.new()
+        net.state._activeCount,net.state._botCount,net.state._spectators=25,5,20
+        ui.render(); assert(ui.primary:IsEnabled()); click(ui.primary); eq(roles[2],"play")
+        lobby.bots=nil
         net.lobbyList,net.join,net.setRole=oldList,oldJoin,oldRole
         net.mode,net.state,net.role,net.slot=oldMode,oldState,oldNetRole,oldSlot
         ui.root:Hide()
@@ -311,17 +425,74 @@ function runWoWSmoke()
         SlashCmdList.RAMPAGE("host"); eq(app.net.mode, "host"); assert(ui.root:IsShown())
         step(0.5); assert(#sent > 0); eq(sent[#sent].distribution, "PARTY")
         SlashCmdList.RAMPAGE("start"); eq(app.net.state.phase, "play")
-        raided = true; event("GROUP_ROSTER_UPDATE"); step(0.5); eq(sent[#sent].distribution, "RAID")
+        raided = true; event("GROUP_ROSTER_UPDATE"); step(1.5); eq(sent[#sent].distribution, "RAID")
         combat = true; event("PLAYER_REGEN_DISABLED"); step(0.5); assert(app.net.state.paused)
         combat = false; event("PLAYER_REGEN_ENABLED"); assert(not app.net.state.paused)
         SlashCmdList.RAMPAGE("leave"); eq(app.net.mode, "idle"); eq(RampageDB.best, 20)
     end)
     check("WoW mock: join stays explicit, group departure resets, help stays local", function()
         SlashCmdList.RAMPAGE("join Friend-OtherRealm"); eq(app.net.mode, "joining")
-        step(0.1); assert(string.find(sent[#sent].payload, "R2|J|abc|", 1, true))
+        step(0.1); assert(string.find(sent[#sent].payload, "R3|J|abc|", 1, true))
         grouped, raided = false, false; event("GROUP_ROSTER_UPDATE"); eq(app.net.mode, "idle")
         local publicBefore = #sent; SlashCmdList.RAMPAGE("help"); assert(#messages >= 3); eq(#sent, publicBefore)
         ui.root.scripts.OnDragStop(ui.root); assert(type(RampageDB.position) == "table")
+    end)
+    check("WoW mock: default Co-op, explicit solo Brawl, owner AI limits and no fake roster", function()
+        local net=app.net
+        ui.root:Show(); ui.render(); eq(ui.selectedMode,"coop")
+        assert(ui.coop.selected and not ui.brawl.selected); assert(not ui.addAI:IsEnabled())
+        click(ui.brawl); assert(ui.brawl.selected and not ui.coop.selected); click(ui.solo)
+        eq(net.mode,"solo"); eq(net.state.mode,"brawl"); eq(net:botCount(),0)
+        assert(ui.lobby:GetText():find("BRAWL",1,true)); assert(not ui.brawl:IsEnabled() and not ui.coop:IsEnabled())
+        for i=1,5 do click(ui.addAI); eq(net:botCount(),i); eq(net:count(),i+1) end
+        click(ui.addAI); eq(net:botCount(),5); assert(not ui.addAI:IsEnabled()); assert(ui.removeAI:IsEnabled())
+        local ai=0
+        for slot,p in pairs(net.state.players) do if p.bot then
+            ai=ai+1; assert(net.members[slot].bot); assert(ui.scores[slot].label:GetText():find("AI",1,true))
+            assert(ui.monsters[slot].badge:GetText():find("AI",1,true)); assert(not net.roster[net.members[slot].name])
+        end end
+        eq(ai,5); assert(ui.crewSub:GetText():find("5 / 5 AI",1,true))
+        for slot=7,25 do Addon.Model.addPlayer(net.state,slot); net.members[slot]={name="Human"..slot.."-Realm"} end
+        ui.render(); eq(net:count(),25); assert(not ui.addAI:IsEnabled())
+        for slot=7,25 do Addon.Model.removePlayer(net.state,slot); net.members[slot]=nil end
+        ui.render()
+        click(ui.removeAI); eq(net:botCount(),4); click(ui.addAI); eq(net:botCount(),5)
+        local mode=net.mode; net.mode="client"; ui.render(); assert(not ui.addAI:IsEnabled() and not ui.removeAI:IsEnabled())
+        net.mode=mode; net.state.phase="victory"; ui.render(); assert(ui.coop:IsEnabled())
+        click(ui.coop); eq(net.state.mode,"coop"); click(ui.primary); eq(net.state.phase,"play"); eq(net.state.mode,"coop")
+        click(ui.leave); eq(net.mode,"idle")
+        -- Grouped primary hosts a lobby, not an instant match: mode remains editable.
+        grouped=true; event("GROUP_ROSTER_UPDATE"); net.lobbies={}; ui.render(); click(ui.primary)
+        eq(net.mode,"host"); eq(net.state.phase,"lobby"); eq(net.state.mode,"coop")
+        assert(ui.brawl:IsEnabled()); click(ui.brawl); eq(net.state.mode,"brawl")
+        net.participants[2]={name="Friend-OtherRealm"}; ui.render()
+        assert(not ui.coop:IsEnabled() and not ui.brawl:IsEnabled())
+        click(ui.coop); eq(net.state.mode,"brawl"); assert(not net:setMode("coop"))
+        net.state.phase="victory"; ui.render(); assert(not ui.coop:IsEnabled())
+        net.participants[2]=nil; net.state.phase="lobby"; ui.render(); assert(ui.coop:IsEnabled())
+        assert(app.rosterUnits["Friend-OtherRealm"]=="party1")
+        unitCombat.party1=true; assert(net.env.inCombat("Friend-OtherRealm")); assert(not net.env.inCombat("NoSuch-Realm"))
+        unitCombat.party1=nil; assert(not net.env.inCombat("Friend-OtherRealm"))
+        click(ui.addAI); eq(net:botCount(),1); click(ui.primary); eq(net.state.phase,"play")
+        assert(not ui.coop:IsEnabled()); click(ui.coop); eq(net.state.mode,"brawl")
+        click(ui.leave); grouped=false; event("GROUP_ROSTER_UPDATE")
+    end)
+    check("WoW mock: Brawl join and observer switch have explicit consent labels", function()
+        local net=app.net
+        local list,join,setRole=net.lobbyList,net.join,net.setRole
+        local lobby={name="Host-Realm",sid="brawl",mode="brawl",phase="play",count=4,spectators=2,bots=2}
+        net.lobbyList=function() return {lobby} end
+        local role,mode
+        net.join=function(_,name,sid,r,m) eq(name,lobby.name); eq(sid,lobby.sid); role,mode=r,m; return true end
+        ui.render(); eq(ui.primary.label:GetText(),"JOIN BRAWL"); assert(ui.lobby:GetText():find("2 AI",1,true))
+        click(ui.primary); eq(role,"play"); eq(mode,"brawl")
+        role=nil; click(ui.spectate); eq(role,"spectate"); eq(mode,"brawl")
+        role=nil; SlashCmdList.RAMPAGE("join Host-Realm"); eq(role,nil); eq(net.mode,"idle")
+        net.mode,net.role,net.state="client","spectate",Addon.Model.new("brawl"); net.state.mode="brawl"
+        net.setRole=function(_,r) role=r; return true end
+        ui.render(); eq(ui.primary.label:GetText(),"JOIN BRAWL"); assert(not ui.capture:IsEnabled() and not ui.health:IsShown())
+        role=nil; SlashCmdList.RAMPAGE("play"); eq(role,nil); click(ui.primary); eq(role,"play")
+        net.lobbyList,net.join,net.setRole=list,join,setRole; net:leave(); ui.render()
     end)
 end
 
@@ -329,20 +500,23 @@ end
 -- Not gameplay/network evidence and not a screenshot from the WoW client.
 function prepareWoWPreview(scene)
     event("ADDON_LOADED", "Rampage"); loggedIn=true; event("PLAYER_LOGIN")
-    SlashCmdList.RAMPAGE("solo")
+    SlashCmdList.RAMPAGE((scene=="brawl" or scene=="ko") and "solo brawl" or "solo")
     local app,ui=Addon.App,Addon.UI
     local s=app.net.state
-    s.stage=scene=="solo" and 3 or 4; s.boss=8+s.stage*2
+    s.stage=scene=="solo" and 3 or scene=="hazard" and 2 or 4; s.boss=8+s.stage*2
     local names={"Deehoc","Toast","Crumb","Sclap","Nick","Waffles","Marmalade","Burnt","Butter","Brioche","Jam","Rye","Bagel","Ciabatta","Sourdough","Muffin","Bun","Pretzel","Pita","Biscuit","Crouton","Pancake","Roll","Croissant","Dough"}
-    local count=scene=="solo" and 1 or 25
+    local chaos=scene=="brawl" or scene=="hazard" or scene=="ko"
+    local count=scene=="solo" and 1 or chaos and 6 or 25
+    if chaos then for _=1,5 do app.net:addAI() end end
     for slot=1,count do
-        if slot>1 then Addon.Model.addPlayer(s,slot) end
-        app.net.members[slot]={name=names[slot].."-ToastRealm"}
+        if slot>1 and not s.players[slot] then Addon.Model.addPlayer(s,slot) end
+        if not (chaos and slot>1) then app.net.members[slot]={name=names[slot].."-ToastRealm"} end
         local p=s.players[slot]
         p.x=(slot%3)*2+2; p.y=1+math.floor((slot-1)/3)%3; p.score=100+slot*50
+        if chaos then p.hp,p.kos=100-slot*9,s.mode=="brawl" and slot%3 or 0; if slot>1 then p.bot=true end end
         if slot%4==0 then p.y=0; p.x=1+slot%7 end
     end
-    app.net.slot=scene=="solo" and 1 or 12
+    app.net.slot=(scene=="solo" or chaos) and 1 or 12
     if scene=="solo" then s.players[1].x,s.players[1].y,s.players[1].score=2,2,1150 end
     if scene=="boss" or scene=="victory" then
         for i=1,9 do s.hp[i]=0 end
@@ -350,11 +524,18 @@ function prepareWoWPreview(scene)
         for slot,p in pairs(s.players) do p.x=1+(slot-1)%7; p.y=0 end
     else s.hp[1],s.hp[5],s.hp[9]=0,1,1 end
     if scene=="spectator" then app.net.role,app.net.slot="spectate",nil end
+    if chaos then
+        -- Match the real stage patterns: Permitron adjacent pair or Queuezilla sweep.
+        s.hazard={phase="warning",remaining=6,lanes=s.stage==2 and {3,4} or {2,3,4},id=3}
+        for slot,p in pairs(s.players) do p.x,p.y=slot,0 end
+        s.players[1].invuln=0
+    end
+    if scene=="ko" then s.players[1].hp,s.players[1].ko=0,2.4 end
     ui.render(); step(0.1)
     if scene=="victory" then s.phase="victory"; s.boss=0 else s.players[app.net.slot or 1].hit=1 end
     ui.render(); step(0.1)
     if scene~="spectator" and scene~="victory" then app.input:grab() end
-    if scene~="solo" then
+    if scene~="solo" and not chaos then
         -- Match raid presentation without pretending the preview fixture is a
         -- transport simulation. No network ticks execute after this fixture.
         app.net.mode,app.net.hostName,app.net.sid="client","Toast-ToastRealm","preview"
