@@ -8,8 +8,12 @@ const toc = fs.readFileSync(path.join(root, 'Rampage.toc'), 'utf8');
 const runtime = toc.split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith('#'));
 if (!toc.includes('## Interface: 20506')) throw new Error('Wrong TBC interface');
 if (runtime.some(x => !x.endsWith('.lua') || !fs.existsSync(path.join(root, x)))) throw new Error('Missing TOC file');
-const tests = ['tests/model.lua', 'tests/protocol.lua', 'tests/wow-smoke.lua'];
-for (const file of [...runtime, ...tests]) {
+const suites = { model: 'tests/model.lua', protocol: 'tests/protocol.lua', wow: 'tests/wow-smoke.lua' };
+const suite = process.argv.find(x => x.startsWith('--suite='))?.split('=')[1];
+if (suite && !suites[suite]) throw new Error('Unknown suite: ' + suite);
+const tests = suite ? [suites[suite]] : Object.values(suites);
+const selectedRuntime = suite && suite !== 'wow' ? runtime.slice(0, 2) : runtime;
+for (const file of [...selectedRuntime, ...tests]) {
   luaparse.parse(fs.readFileSync(path.join(root, file), 'utf8'), { luaVersion: '5.1' });
   console.log(`Lua 5.1 syntax OK: ${file}`);
 }
@@ -40,9 +44,12 @@ execute(`
   end
 `, '@test-bootstrap');
 for (const file of runtime.slice(0, 2)) execute(moduleSource(file), '@load-' + file);
-for (const file of tests.slice(0, 2)) execute(fs.readFileSync(path.join(root, file), 'utf8'), '@' + file);
-// Smoke test defines API mocks before exercising the real TOC load order in a fresh addon namespace.
-execute(fs.readFileSync(path.join(root, tests[2]), 'utf8'), '@' + tests[2]);
-for (const file of runtime) execute(moduleSource(file), '@toc-' + file);
-execute('runWoWSmoke(); print("ALL " .. TEST_COUNT .. " TESTS PASSED (Fengari Lua 5.3 semantics; separate Lua 5.1 syntax checks above)")', '@finish');
+for (const file of tests.filter(x => x !== suites.wow)) execute(fs.readFileSync(path.join(root, file), 'utf8'), '@' + file);
+if (tests.includes(suites.wow)) {
+  // Smoke test defines API mocks before exercising the real TOC load order in a fresh addon namespace.
+  execute(fs.readFileSync(path.join(root, suites.wow), 'utf8'), '@' + suites.wow);
+  for (const file of runtime) execute(moduleSource(file), '@toc-' + file);
+  execute('runWoWSmoke()', '@wow-finish');
+}
+execute('print("ALL " .. TEST_COUNT .. " TESTS PASSED (Fengari Lua 5.3 semantics; separate Lua 5.1 syntax checks above)")', '@finish');
 lua.lua_close(L);

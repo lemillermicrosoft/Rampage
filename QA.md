@@ -1,102 +1,89 @@
-# QA — first playable FOUR MORE BOSSES MVP
+# QA — keyboard / 25-player polish candidate
 
 ## Evidence boundary
 
-**Automated checks were run on 2026-10-28 on Windows, Node v24.18.0 / npm 11.16.0. No actual WoW/TBC client or two real game accounts were used for this implementation's verification.** This is a ready-for-playtest MVP, not a claim of in-game compatibility, taint safety or visual approval.
+The requester supplied an actual WoW screenshot of **the original four-player MVP** running solo at stage 3/4 with 1,150 fame. This is evidence of original solo loading/play, not proof of this new iteration's keyboard, graphics, audio or raid networking.
 
-Fengari **0.1.5 uses Lua 5.3 semantics**. The test bootstrap supplies the Lua 5.1-style global `unpack` for that runner. Separately, `luaparse@0.3.1` parses every runtime/test Lua file with `luaVersion: '5.1'`. No native Lua 5.1 executable was available. Neither the parser nor the mocks verifies all differences in WoW's embedded VM/API.
+**This iteration was checked on Windows with Node v24.18.0, Fengari 0.1.5 (Lua 5.3 execution semantics), and luaparse 0.3.1 (separate Lua 5.1 grammar). No native Lua 5.1 runtime, real 25-player raid, 15 real spectators, native keyboard routing/taint or actual audio playback was verified.**
 
-## Actually executed
+## Executed automated checks
 
-| Check | Result |
+- `npm test`: **37/37 passed** — 8 model, 17 protocol, 12 strict WoW/UI/input/audio mock checks.
+- `npm run check:lua51`: **9/9 files parsed** (6 TOC runtime files and 3 Lua suites).
+- `node tests/run.cjs --suite=wow`: **12/12 passed** independently after integration fixes, including missed key-up without a window-focus helper and Meta-key release.
+- `git diff --check`: clean (Windows LF/CRLF notices are not failures).
+- `npm audit --audit-level=moderate`: zero vulnerabilities in pinned test dependencies.
+- Actual UI mock export: `node tests/ui-preview.cjs --scene <scene> --output docs/previews/mock-<scene>.svg`; solo, raid, boss, victory, spectator scenes generated. SVGs rasterized with an isolated review-only resvg helper and visually inspected. Runtime does not depend on it.
+- Runtime pool after **500 animated 25-player renders**: **93 frames / 1,190 textures / 83 font strings**, no frame/texture/font growth; 72 recycled effect particles.
+
+The test runner supports `--suite=model`, `--suite=protocol`, and `--suite=wow`. Full protocol tests are intentionally heavier than syntax checks because every broadcast reaches the 40-node simulation. Do not equate a mock preview or syntax parse with native WoW behavior.
+
+## Model and protocol coverage
+
+Eight model checks cover lobby/start/replay, 25-slot cap, movement/climb bounds, shared floor/collapse, exposed boss reach, exact four-stage total, pause, late members, and simultaneous 25-monster collapse/reset.
+
+Seventeen protocol checks cover:
+- Explicit opt-in discovery/join; no incoming forced join/window.
+- Actual roster sender, host/session, host-issued admission generation, role/input sequencing and challenge replay prevention.
+- Duplicate/out-of-order/rapid/prior-stage/prior-role/future input rejection.
+- Atomic fragments, reordered/duplicate/stale/incomplete snapshots, bounded expiring assemblies and malformed worlds.
+- Spectator late join, no avatar/score/input/start, active-full spectator fallback, role switching, no displaced active players.
+- Shared damage, healing dropped snapshots, host combat pause and input epoch invalidation.
+- Departures, host loss, stalled worlds, silent spectators, removal-record loss recovery, reconnect.
+- Counter saturation refusal; coalesced bounded queues, inbound floods, strict member records and malformed/fuzz input.
+- Forty-client maximum-name admission and simultaneous reconnect.
+- Sustained 25-active + 15-spectator four-boss/replay run under loss/duplication/reordering and combat.
+
+### Measured finite-budget fixtures
+
+| Fixture | Observed result |
 | --- | --- |
-| `npm ci --ignore-scripts --no-fund --no-audit` | Reproduced exact lockfile install, exit 0 |
-| `npm test` | **36/36 passed**, exit 0 |
-| Lua 5.1 grammar checks within test run | All **4 TOC runtime files + 3 Lua test files** parsed |
-| `npm run check:lua51` | **7/7 files passed**, exit 0 |
-| TOC manifest check | All runtime entries exist; `Interface: 20506` |
-| `git diff --check` | No whitespace errors, exit 0; standard Windows LF→CRLF notices only |
-| `npm audit --audit-level=moderate` | **0 vulnerabilities**, exit 0, after pinning Fengari 0.1.5 |
-| Full two-client simulated playthrough | All four bosses, both players scoring, identical shared victory, **2380 total fame**, synchronized replay |
-| Largest configured snapshot fixture | **103 bytes**, under 255; every simulated emitted packet checked at send |
-| Fixed mocked UI allocation fixture | **30 frames / 144 textures / 15 font strings**, unchanged after 100 renders |
+| Maximum-field world | 2 packets, **340 combined payload bytes**, each ≤255 |
+| Forty 96-byte names | admission **23.0s**, simultaneous reconnect converged |
+| Maximum-name host traffic | **4.61 msgs/s**, **577.0 payload B/s**, **650.7 charged B/s** |
+| Maximum-name queue / world gap | **47/128**, **1.5s** |
+| Sustained 25+15 duration | **124.7s**, four bosses through actual client inputs, replay, combat pause |
+| Loss fixture | **4.35% per-recipient loss**, plus duplication/reordering; exact final convergence |
+| Sustained host traffic | **3.47 msgs/s**, **307.5 payload B/s**, **363.0 charged B/s** |
+| Sustained whole-group traffic | **60.79 msgs/s**, **1,968.0 payload B/s**, 601 guest heartbeats |
+| Sustained queue / maximum world gap | **41/128**, **2.9s** |
 
-An initial audit of Fengari 0.1.4 found a vulnerable development-only `tmp` dependency. The runner was deliberately pinned to **0.1.5** instead; a subsequent audit found zero vulnerabilities. There are no npm/runtime dependencies loaded by WoW.
+Hard per-sender budget: 8 msgs/s, 700 charged B/s, burst 10/1,000; 16-byte allowance per message. Snapshot interval **1.25s (0.8 Hz)**, not the approximately 30Hz visual animation cadence or 5Hz keyboard sampling. Queue 128, at most 3 assemblies × 2 parts, 6s expiry. The conservative snapshot rate is a known remote-responsiveness tradeoff, not a promise of action-game latency. Admission can wait up to the bounded 90s timeout.
 
-### Seven deterministic model tests
+## Input, UI and audio coverage
 
-- Explicit lobby/start/replay; four-player cap.
-- Ground bounds; tower-only climbing; no sideways walking while elevated; bad action/slot rejection.
-- Two monsters damage the **same** floor; tower collapse drops both safely; per-player scoring.
-- Boss shield, exposed-boss reach restrictions and city scoring.
-- All four complete stages, two-second transitions, shared victory, exact total and fresh replay.
-- Pause blocks both actions and intermission progression.
-- Removing/adding a player does not reset city damage.
+Twelve mock checks cover full TOC load, saved-variable sanitation, no forced window, solo mouse fallback, explicit keyboard grab, WASD/arrows/Space mapping, bounded held repeat, unknown/chat shortcut propagation, edit focus, Escape, focus loss, missed key-up reconciliation without `IsWindowFocused`, Alt/Meta release, long stalls, hide/world departure/spectator/combat release, scaling, visible-only discovery, explicit Join/Spectate, party/raid filtering and canonical cross-realm names.
 
-### Twenty-two protocol/simulation tests
+Combat mocks **throw if restricted propagation is mutated in combat**. Production hides the ordinary keyboard frame and clears held keys; it does not change permanent/override bindings or protected actions. Source signatures were checked against the `classic_anniversary` Blizzard UI mirror:
+- `Blizzard_APIDocumentationGenerated/SimpleFrameAPIDocumentation.lua`: EnableKeyboard / SetPropagateKeyboardInput and restrictions.
+- `Blizzard_SharedXML/KeyCommand.lua`: physical `IsKeyDown` usage.
 
-- Explicit discovery/join; unsolicited membership cannot auto-join.
-- Two-client shared floor destruction, positions and personal-score convergence.
-- Actual roster-sender checks; foreign host, wrong session/member token rejected.
-- Duplicate/out-of-order and too-fast actions cannot double-apply.
-- Strict snapshot bounds/shape; stale and malformed snapshots are rejected without partial mutation.
-- Late join into a partly destroyed stage 3 with existing host score.
-- Four-player cap and full fifth client's bounded timeout.
-- Leave/rejoin with a fresh token; old input and delayed removal revision rejected.
-- Roster/group departure and no host migration.
-- Silent host and silent guest timeouts; explicit host end/new session.
-- Guest combat blocks input; host combat pauses everyone; liveness survives 21 seconds of combat.
-- Lost snapshot heals with a newer full snapshot.
-- Outbound/inbound token-bucket bounds, fixed/coalesced queue and maximum message size.
-- Actual roster membership names and extreme configured snapshot values.
-- Malformed/fuzz packets do not crash or grow game/queue state.
-- Prior-stage/replay and impossible future-snapshot input references rejected.
-- Lost membership heals through join retries without duplicate players.
-- Periodic membership cannot mask a stalled world-state stream.
-- Eight-lobby cache cap and expiry.
-- Full two-client four-boss victory and replay.
-- Solo works without a group or transport; combat cannot start it.
+No guaranteed native window-focus API was established; `IsWindowFocused` is guarded. Taskbar switching, exact native key delivery/propagation, and frame taint need manual verification.
 
-### Seven TOC / mocked WoW tests
+Audio mocks cover default-off, missing provider, provider None/nil, playback false/exception, explicit mute, per-cue/global throttles, own-hit-only behavior, major spectator transitions, duplicate transition suppression, and no late-join/hidden-window catch-up. No audio was copied or auditioned. Existing BlasterMaster role assignments are the user's mappings; duration labels in prior tooling were not acoustic proof. Missing/disabled provider remains silent, with no fallback surprise.
 
-- Real TOC load order, initialization events, version, saved-variable sanitation and no forced window.
-- Solo slash flow, original shape pools, mouse buttons, visible damaged/destroyed tile state and local best.
-- Combat hides/disables controls; only a previously open window is restored.
-- Stable frame/texture/font pool sizes after repeated rendering.
-- Wrong prefix/distribution/outsider rejected; same character names on different realms stay distinct.
-- Host/Start/Leave slash flow; PARTY then RAID addon transport; host combat pause.
-- Explicit join, group-departure reset, local help and position persistence.
+## Visual review — mock layouts, NOT native screenshots
 
-Mocks intentionally fail on unknown APIs and on public chat, global/override keybinds or sound calls. They **do not** render pixels, emulate protected actions/taint, model server transport throttling, or prove that every API exists in the exact TBC client build.
+`docs/previews/mock-{solo,raid,boss,victory,spectator}.svg` comes from the actual runtime UI and strict frame/texture/font geometry mocks. Review PNGs are task artifacts, not shipped Media.
 
-## Real TBC 2.5.6 checklist — NOT PERFORMED
+Inspected readability of title/action buttons, compact fallback controls, warm skyline/window damage, varied colored creatures, local highlight, 25-player overlap fan and roster chips, exposed boss/HP bar, spectator-disabled controls and victory layout. No text/button clipping was seen in the normal-size mock fixtures. Twenty-five monsters can still overlap heavily; hover chips and local priority help but the real-client readability check remains necessary. The previews do not render native Blizzard fonts, tooltip behavior, input focus, sound or transport.
 
-Use the same build on two or more clients. Record client build/locale, errors, expected/actual result and screenshots when reporting a failure.
+## Manual TBC 20506 checklist — outstanding for this iteration
 
-- [ ] **Install/load:** enable addon, confirm Interface 20506, `/reload`, inspect Lua errors. No window opens by itself and no chat/sound is emitted.
-- [ ] **Solo rendering:** `/rampage solo`. Window drag/clamping/close/reopen at normal and small UI scales; check fonts, scoreboard, floor alignment, boss placement, horn colors and fist flashes. Hover/click controls while ordinary WoW bindings remain unaffected.
-- [ ] **Solo gameplay:** walk onto a tower, climb to top, punch twice per floor, descend; see cracks, missing floors and rubble. Destroy all three towers; punch exposed boss from middle ground lanes. Finish all four bosses, see shared-victory text, replay and verify personal best persists through `/reload`.
-- [ ] **Two-client party:** A Host, B Find/Join, A Start. Each damages the same floor once: exactly one floor breaks and each earns 10. Compare positions, boss HP, damage, personal scores and shared victory. A non-joining third client must never have a window forced open.
-- [ ] **Raid / multiple lobbies:** repeat after party→raid conversion; different hosts discover/select the intended lobby. Verify true cross-realm canonical sender behavior if available. Ordinary PARTY/RAID only; instance/battleground categories remain unsupported.
-- [ ] **Late join:** A starts/advances a stage before B joins. B sees existing city/boss/score state, starts at zero and can immediately contribute after synchronization.
-- [ ] **Cap/retry:** fill four slots, attempt a fifth (bounded timeout); leave one and retry. No displaced players or unbounded messages.
-- [ ] **Combat:** while visible, A enters combat. A's window hides and B sees paused state; no one can change the city. Return out of combat and resume. Repeat with only B entering combat: B's controls unavailable, A may continue. Enter combat while already hidden: no surprise window after combat. Test a drag interrupted by combat.
-- [ ] **Departure/reload:** guest Leave and group kick/disband; host Leave and disconnect/reload. Check explicit end or documented 15s/20s timeout behavior; no migration/automatic rejoin. Rejoin explicitly and verify old state/input cannot leak into a new session.
-- [ ] **Real transport:** moderate/high latency and alongside normal raid addons. Confirm normal addon traffic does not trigger server throttle warnings; dropped clicks may require a repeat, but later snapshots converge. Check no public RAID/PARTY/GUILD chat is generated.
-- [ ] **Taint/protected actions:** use normal spell, movement, targeting and raid controls before/during/after play and combat. Inspect the client's taint/error tooling; no protected actions should be touched by this addon.
+Use identical R2 candidate ZIPs; R1 is incompatible. Do not force a user/client reload from automation.
 
-## Known MVP limits
+- [ ] **Install/load:** enable or safe `/reload`; no Lua errors/forced window. Verify six TOC Lua modules, preserved personal best/position, default-off audio.
+- [ ] **Keyboard:** `/rampage solo`, click PLAY, WASD/arrows/Space hold. No movement/spells reach WoW while consumed. Press unknown keys, Enter, slash and custom chat bindings; keys propagate and capture releases. Type into chat/search; no game movement.
+- [ ] **Focus recovery:** Escape, hide, Leave, group departure, Alt-Tab, Win/Meta shortcut, taskbar switch, missed key-up, loading screen and long stall. No stuck repeat/capture. PLAY must be explicit to recapture. Test native API behavior with no assumed `IsWindowFocused` helper.
+- [ ] **Combat / taint:** enter combat while holding Space and dragging; frame hides, game input stops, no restricted-action errors. Host pauses everyone; guest alone does not pause host. After combat window may return but keyboard stays released. Normal raid movement, targeting, spells and bindings remain unaffected.
+- [ ] **Graphics / scale:** small/large UI scales and resolutions; drag/clamp, local-player halo, 25-chip hover names, overlap, native font wrapping, cracks/rubble, punch/collapse effects, boss shield/HP and victory confetti. Verify no child frame anchor/scale surprises.
+- [ ] **Simple lobby:** one Host & Start; another opens window and Join Game in progress; separate Spectate; active-full fallback, 40-total refusal, role switch after a slot opens; multiple lobbies and Next Host. Joining never forced.
+- [ ] **Real two-client baseline:** each hits the same floor once and both see destruction; compare position/fame/boss/stages and replay. Check 1.25s authoritative latency is tolerable before scaling.
+- [ ] **Real raid load:** build toward 25 active + 15 spectators, cross-realm roster, all late join/rejoin; no starved last members/fragment errors. Measure actual latency/traffic alongside raid addons. Host reload/disconnect ends cleanly; no migration.
+- [ ] **Sound:** with BlasterMaster installed, opt in and verify local crit/combatStart/levelUp role mappings, None, provider variants, mute/SFX disabled/missing provider; no network hit chorus, stale transition bursts or global volume/settings edits.
 
-- Four participants per lobby; eight visible lobbies; no host migration.
-- Same basic city layout and encounter pattern across four named/color-tinted stages; increasing boss HP. No health/hazards/death, audio, elaborate animation or art polish yet.
-- Ground-only horizontal movement; click-only input. No hold-to-repeat, keyboard/gamepad or client prediction.
-- Full-state rendering up to 4 Hz plus transport latency, not a precision action-game network loop.
-- Only normal party/raid addon channels. No battleground/instance-chat transport, friend whispers or guild transport.
-- Host is trusted authority, not a competitive anti-cheat server. Lost inputs are not retried. A full/unreachable join uses a generic 12-second timeout.
-- Team fame includes current participants only; explicit leavers take their score out of the team total. Local personal best remains.
-- Window is a fixed 720×610 layout; exact UI-scale/text/locale behavior awaits the manual pass.
-- CurseForge publication, release, merge and PR ownership remain outside this implementation pass.
+## Known limits / release gate
 
-## Final verification
+Same forgiving four-stage rules; no hazards/death, no host migration, no alternate instance-chat transport, no competitive anti-cheat. Host is trusted authority. The host stays active; switching to spectate resets that player's current fame. Up to 25 active/40 total, not 40 active. UI is original geometric/pixel-style art, not licensed classic sprites.
 
-Run `npm ci --ignore-scripts`, `npm test`, `npm run check:lua51`, `npm audit --audit-level=moderate` and `git diff --check` from the repository. The test runner exits nonzero on any failed assertion or Lua 5.1 parse error. This document distinguishes those executed automated results from the unchecked in-game checklist above.
+Hold merge/release until explicit `!ship rampage`; CurseForge remains deferred. Original candidate commit `51b6b6d` and its ZIP are preserved for rollback. This file records automated evidence and separates all remaining native checks.

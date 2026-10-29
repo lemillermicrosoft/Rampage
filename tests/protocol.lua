@@ -1,277 +1,382 @@
 local N, M = Addon.Protocol, Addon.Model
-local function input(client, seq, action, sid, joinToken, seenState)
-    return table.concat({"R1", "I", sid or client.sid, joinToken or client.joinToken, seq, seenState or client.inSeq, action}, "|")
+local function input(c, seq, action, options)
+    local o = options or {}
+    return table.concat({"R2", "I", o.sid or c.sid, o.token or c.joinToken, o.generation or c.generation,
+        seq, o.seen or c.inSeq, o.epoch or c.state._epoch, o.roleSeq or c.acceptedRoleSeq, action}, "|")
 end
-local function simulation(count)
-    local sim = { time = 0, nodes = {}, pending = {}, sent = {}, roster = {} }
-    for i = 1, count do sim.roster["Player" .. i .. "-Realm"] = true end
+local function simulation(count, longNames)
+    local sim = { time = 0, nodes = {}, pending = {}, sent = {}, roster = {}, serial = 0, maxQueue = 0, maxLag = 0 }
     for i = 1, count do
-        local name, serial = "Player" .. i .. "-Realm", 0
-        local node = { name = name, active = true }
+        local name = "Player" .. i .. "-Realm"
+        if longNames then name = name .. string.rep("r", 96 - #name) end
+        sim.roster[name] = true
+        local serial, node = 0, { name = name, active = true, packets = 0, bytes = 0, wire = 0 }
         node.net = N.new({ name = name, now = function() return sim.time end,
             token = function() serial = serial + 1; return "T" .. i .. "x" .. serial end,
             send = function(payload)
                 assert(#payload <= 255, "message exceeds WoW limit")
-                local packet = { sender = name, payload = payload, time = sim.time }
-                sim.pending[#sim.pending + 1] = packet; sim.sent[#sim.sent + 1] = packet
+                node.packets, node.bytes, node.wire = node.packets + 1, node.bytes + #payload, node.wire + #payload + N.WIRE_OVERHEAD
+                assert(node.packets <= N.SEND_BURST + sim.time * N.SEND_RATE + 0.01, "packet bucket exceeded")
+                assert(node.wire <= N.BYTE_BURST + sim.time * N.BYTE_RATE + 0.01, "byte bucket exceeded")
+                sim.serial = sim.serial + 1
+                local p = { sender = name, payload = payload, time = sim.time, serial = sim.serial }
+                sim.sent[#sim.sent + 1] = p
+                -- Deterministic transport jitter gives real packet reordering, not just late assertions.
+                p.due = sim.time + (sim.jitter and (sim.serial % 4) * 0.1 or 0)
+                sim.pending[#sim.pending + 1] = p
             end })
-        node.net:setRoster(sim.roster, true); sim.nodes[i] = node
+        sim.nodes[i] = node
     end
-    function sim:step(seconds)
-        local steps = math.ceil(seconds / 0.05)
-        for _ = 1, steps do
-            self.time = self.time + 0.05
-            for _, node in ipairs(self.nodes) do if node.active then node.net:tick(0.05) end end
+    for _, node in ipairs(sim.nodes) do node.net:setRoster(sim.roster, true) end
+    function sim:step(seconds, drive)
+        for _ = 1, math.ceil(seconds / 0.1 - 0.00001) do
+            self.time = self.time + 0.1
+            if drive then drive(self) end
+            for _, node in ipairs(self.nodes) do
+                if node.active then
+                    local before = node.net.inSeq; node.net:tick(0.1)
+                    self.maxQueue = math.max(self.maxQueue, #node.net.queueOrder)
+                    assert(#node.net.queueOrder <= N.MAX_QUEUE)
+                    if node.net.mode == "client" and node.net.lastSnapshot then self.maxLag = math.max(self.maxLag, self.time - node.net.lastSnapshot) end
+                    local assemblies = 0; for _ in pairs(node.net.assemblies) do assemblies = assemblies + 1 end
+                    assert(assemblies <= N.MAX_ASSEMBLIES)
+                    if node.net.mode == "client" then assert(node.net.inSeq >= before) end
+                end
+            end
             local pending = self.pending; self.pending = {}
-            for _, packet in ipairs(pending) do
-                for _, node in ipairs(self.nodes) do
-                    if node.active and node.name ~= packet.sender and not (self.drop and self.drop(packet, node)) then
-                        node.net:receive(packet.sender, packet.payload)
+            for _, p in ipairs(pending) do
+                if p.due > self.time + 0.00001 then self.pending[#self.pending + 1] = p
+                else
+                    for index, node in ipairs(self.nodes) do
+                        if node.active and node.name ~= p.sender and not (self.drop and self.drop(p, node, index)) then
+                            local before = node.net.inSeq
+                            node.net:receive(p.sender, p.payload)
+                            if self.duplicates and (p.serial + index) % 29 == 0 then node.net:receive(p.sender, p.payload) end
+                            if node.net.mode == "client" then assert(node.net.inSeq >= before, "snapshot regressed") end
+                        end
                     end
                 end
             end
         end
     end
-    function sim:connect(index)
-        local host, client = self.nodes[1].net, self.nodes[index].net
-        assert(client:join(host.name, host.sid)); self:step(1)
-        eq(client.mode, "client"); assert(client.slot and client.state)
+    function sim:wait(predicate, timeout)
+        local deadline = self.time + (timeout or 15)
+        while not predicate() and self.time < deadline do self:step(0.1) end
+        assert(predicate(), "condition timed out at " .. self.time)
+    end
+    function sim:connect(index, role)
+        local h, c = self.nodes[1].net, self.nodes[index].net
+        if not c.lobbies[h.name] then c:discover(); self:wait(function() return c.lobbies[h.name] ~= nil end) end
+        assert(c:join(h.name, h.sid, role))
+        self:wait(function() return c.mode == "client" and c.state and c.state._revision == h.revision end, 30)
+        return c
     end
     function sim:act(index, action)
-        self:step(0.25); assert(self.nodes[index].net:action(action)); self:step(0.35)
+        self:step(0.3); assert(self.nodes[index].net:action(action)); self:step(1.5)
     end
     assert(sim.nodes[1].net:host()); sim:step(0.5)
     return sim
 end
-
-check("protocol: discovery is opt-in join, never an unsolicited session", function()
+local function deliver(c, h, chunks)
+    local accepted
+    for _, chunk in ipairs(chunks) do accepted = c:receive(h.name, chunk) end
+    return accepted
+end
+local function worldSame(a, b)
+    eq(b.phase, a.phase); eq(b.stage, a.stage); eq(b.boss, a.boss); eq(b.paused, a.paused)
+    for i = 1, 9 do eq(b.hp[i], a.hp[i] or 0) end
+    for slot = 1, 25 do
+        local p, q = a.players[slot], b.players[slot]
+        eq(p ~= nil, q ~= nil)
+        if p then eq(q.x, p.x); eq(q.y, p.y); eq(q.score, p.score); eq(q.hit, p.hit) end
+    end
+end
+check("protocol: R2 opt-in discovery and unchanged public interface", function()
     local sim = simulation(2); local h, c = sim.nodes[1].net, sim.nodes[2].net
-    eq(c.mode, "idle"); eq(#c:lobbyList(), 1); assert(not c.state)
-    c:receive(h.name, "R1|M|" .. h.sid .. "|1|2|" .. c.name .. "|fake")
-    eq(c.mode, "idle"); assert(not c:join("Outsider-Realm", h.sid))
-    sim:connect(2); eq(h:count(), 2); eq(c.members[c.slot].name, c.name)
+    eq(N.VERSION, "R2"); eq(c.mode, "idle"); eq(#c:lobbyList(), 1); assert(not c.state)
+    eq(c:lobbyList()[1].spectators, 0)
+    assert(not c:receive(h.name, "R1|Q")); assert(not c:join("Outsider-Realm", h.sid))
+    sim:connect(2); eq(h:count(), 2); eq(c.role, "play"); eq(c.members[c.slot].name, c.name)
+    assert(not c:start()); assert(not h:setRole("spectate")); eq(h.slot, 1)
 end)
-check("protocol: two clients cooperatively destroy one shared floor and synchronize scores", function()
-    local sim = simulation(2); sim:connect(2)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    assert(h:start()); sim:step(0.4)
-    sim:act(1, "R"); sim:act(2, "R"); sim:act(1, "P")
-    eq(h.state.hp[1], 1); eq(c.state.hp[1], 1)
-    sim:act(2, "P"); eq(h.state.hp[1], 0); eq(c.state.hp[1], 0)
-    eq(h.state.players[1].score, 10); eq(c.state.players[c.slot].score, 10)
-    eq(h.state.players[c.slot].score, c.state.players[c.slot].score)
+check("protocol: actual roster sender, host, session and generated admission identity are mandatory", function()
+    local sim = simulation(3); local c = sim:connect(2); local h, other = sim.nodes[1].net, sim.nodes[3].net
+    h:start(); sim:step(2)
+    local before = c.inSeq; local fake = N.encodeState(h.state, h.sid, before + 50)
+    assert(not c:receive(other.name, fake[1])); assert(not c:receive("Stranger-Realm", fake[1])); eq(c.inSeq, before)
+    assert(not h:receive("Stranger-Realm", "R2|J|" .. h.sid .. "|x|p"))
+    for _, o in ipairs({{sid="WRONG"}, {token="WRONG"}, {generation=999999}, {epoch=999999}, {roleSeq=99}}) do
+        assert(not h:receive(c.name, input(c, 500, "R", o)))
+    end
+    assert(not h:receive(other.name, input(c, 500, "R"))); eq(h.state.players[c.slot].x, 1)
+    assert(not c.receiveBuckets["Stranger-Realm"])
 end)
-check("protocol: host-authority rejects outsiders, forged host, wrong session and token", function()
-    local sim = simulation(3); sim:connect(2)
-    local h, c, other = sim.nodes[1].net, sim.nodes[2].net, sim.nodes[3].net
-    h:start(); sim:step(0.4)
-    local before = c.inSeq
-    local fake = N.encodeState(h.state, h.sid, before + 50)
-    assert(not c:receive(other.name, fake)); assert(not c:receive("Stranger-Realm", fake)); eq(c.inSeq, before)
-    assert(not h:receive("Stranger-Realm", "R1|J|" .. h.sid .. "|x"))
-    assert(not h:receive(c.name, input(c, 500, "R", "WRONG")))
-    assert(not h:receive(c.name, input(c, 500, "R", nil, "WRONG")))
-    eq(h.state.players[c.slot].x, 1)
-    assert(not c:receive(h.name, "R1|S|other|999|p|1|10|0|222222222|1,0,0,0;-;-;-"))
-    eq(c.inSeq, before)
+check("protocol: host challenge prevents replayed old joins and confirmations replacing live identity", function()
+    local sim = simulation(2); local c = sim:connect(2); local h = sim.nodes[1].net
+    local oldToken, oldGen = c.joinToken, c.generation
+    c:leave(); sim:step(1); eq(h:count(), 1); sim:connect(2)
+    assert(c.joinToken ~= oldToken and c.generation > oldGen)
+    local currentGen = c.generation
+    assert(h:receive(c.name, "R2|J|" .. h.sid .. "|" .. oldToken .. "|p"))
+    assert(not h:receive(c.name, "R2|B|" .. h.sid .. "|" .. oldToken .. "|" .. oldGen))
+    assert(not h:receive(c.name, "R2|L|" .. h.sid .. "|" .. oldToken .. "|" .. oldGen))
+    eq(h.members[c.slot].generation, currentGen)
 end)
-check("protocol: duplicate/out-of-order inputs and rapid actions cannot double-apply", function()
-    local sim = simulation(2); sim:connect(2)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    h:start(); sim:step(0.4)
+check("protocol: duplicate, out-of-order, too-fast, previous stage/replay and future inputs rejected", function()
+    local sim = simulation(2); local c = sim:connect(2); local h = sim.nodes[1].net
+    h:start(); sim:step(2)
     assert(h:receive(c.name, input(c, 10, "R"))); eq(h.state.players[c.slot].x, 2)
     assert(not h:receive(c.name, input(c, 10, "R"))); assert(not h:receive(c.name, input(c, 9, "R")))
     assert(not h:receive(c.name, input(c, 11, "R"))); eq(h.state.players[c.slot].x, 2)
     sim:step(0.3); assert(h:receive(c.name, input(c, 12, "R"))); eq(h.state.players[c.slot].x, 3)
+    local old = input(c, 13, "R"); local seen = c.inSeq
+    h.state.phase, h.state.wait = "clear", 0.1; sim:step(2); eq(c.state.stage, 2)
+    assert(not h:receive(c.name, old)); assert(not h:receive(c.name, input(c, 14, "R", {seen=seen})))
+    assert(not h:receive(c.name, input(c, 14, "R", {seen=h.snapshotSeq+1})))
+    old = input(c, 15, "R"); h.state.phase = "victory"; assert(h:start()); sim:step(2)
+    assert(not h:receive(c.name, old)); eq(h.state.players[c.slot].x, 1)
 end)
-check("protocol: complete snapshots reject stale, duplicate and malformed state atomically", function()
-    local sim = simulation(2); sim:connect(2)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    h:start(); sim:step(0.4)
-    local seq, state = c.inSeq, c.state
-    assert(not c:receive(h.name, N.encodeState(h.state, h.sid, seq)))
-    assert(not c:receive(h.name, N.encodeState(h.state, h.sid, seq - 1)))
-    local bad = {
-        "p|5|10|0|222222222|1,0,0,0;-;-;-", "p|1|99|0|222222222|1,0,0,0;-;-;-",
-        "p|1|10|2|222222222|1,0,0,0;-;-;-", "p|1|10|0|222292222|1,0,0,0;-;-;-",
-        "p|1|10|0|222222222|8,0,0,0;-;-;-", "p|1|10|0|222222222|1,1,0,0;-;-;-",
-        "p|1|10|0|222222222|1,0,-1,0;-;-;-", "p|1|10|0|222222222|1,0,0,1000;-;-;-",
-        "p|1|10|0|222222222|1,0,0,0;-;-;-;-", "p|1|10|0|222222222|1,0,1e2,0;-;-;-"
-    }
-    for _, suffix in ipairs(bad) do assert(not c:receive(h.name, "R1|S|" .. h.sid .. "|99999|" .. suffix)) end
-    eq(c.state, state); eq(c.inSeq, seq)
-    assert(not c:receive(h.name, string.rep("x", 256)))
+check("protocol: bounded chunks assemble atomically under reordering, stale/duplicate and incomplete expiry", function()
+    local sim = simulation(2); local c = sim:connect(2); local h = sim.nodes[1].net
+    local oldState, seq = c.state, c.inSeq
+    local chunks = N.encodeState(h.state, h.sid, seq + 10, h.inputEpoch, h.revision, h.participants)
+    eq(#chunks, 2); assert(c:receive(h.name, chunks[2])); eq(c.state, oldState); eq(c.inSeq, seq)
+    assert(not c:receive(h.name, chunks[2])); assert(c:receive(h.name, chunks[1])); eq(c.inSeq, seq + 10)
+    assert(not deliver(c, h, chunks)); assert(not deliver(c, h, N.encodeState(h.state, h.sid, seq + 9)))
+    for i = 1, 9 do
+        sim:step(0.1)
+        assert(c:receive(h.name, N.encodeState(h.state, h.sid, seq + 10 + i)[1]))
+    end
+    local count = 0; for _ in pairs(c.assemblies) do count = count + 1 end; eq(count, N.MAX_ASSEMBLIES)
+    sim.nodes[1].active = false; sim:step(N.ASSEMBLY_TIMEOUT + 0.2); assert(not next(c.assemblies))
 end)
-check("protocol: mid-game late join receives current stage/city and existing personal scores", function()
-    local sim = simulation(3); sim:connect(2)
-    local h, late = sim.nodes[1].net, sim.nodes[3].net
-    h:start(); h.state.stage = 3; h.state.boss = 14; h.state.hp[4] = 0; h.state.players[1].score = 745
-    sim:step(0.4); sim:connect(3); sim:step(0.5)
-    eq(late.state.stage, 3); eq(late.state.hp[4], 0); eq(late.state.players[1].score, 745)
-    eq(late.state.players[late.slot].score, 0); eq(h:count(), 3)
+check("protocol: malformed bounded snapshots never partially replace a world", function()
+    local sim = simulation(2); local c = sim:connect(2); local h = sim.nodes[1].net
+    local valid = N.encodeState(h.state, h.sid, 999)[1]
+    local oldState, seq = c.state, c.inSeq
+    local bad = { "R2|S|" .. h.sid .. "|999|3|2|x", "R2|S|" .. h.sid .. "|999|1|9|x", "R2|S|" .. h.sid .. "|1e2|1|1|x",
+        "R2|S|" .. h.sid .. "|999|1|1|bad", valid .. "|extra", string.rep("x", 256) }
+    for _, text in ipairs(bad) do assert(not c:receive(h.name, text)) end
+    local chunks = N.encodeState(h.state, h.sid, 999)
+    local body = string.match(chunks[1], "^R2|S|[^|]+|[^|]+|[^|]+|[^|]+|(.+)$") .. string.match(chunks[2], "^R2|S|[^|]+|[^|]+|[^|]+|[^|]+|(.+)$")
+    assert(N.decodeState(body))
+    for _, b in ipairs({body:gsub("^l,1,10,0", "p,5,10,0"), body:gsub("^l,1,10,0", "p,1,99,0"), body:gsub("^l,1,10,0", "p,1,10,2"), body:gsub("000000000", "000090000", 1)}) do
+        assert(not N.decodeState(b))
+    end
+    local prefix, players = string.match(body, "^(.*),([^,]+)$")
+    local badPlayers = {"80000000", "11000000", "10zzzz00", "100000zz", "--------"}
+    for _, p in ipairs(badPlayers) do assert(not N.decodeState(prefix .. "," .. p .. string.sub(players, 9))) end
+    assert(not N.decodeState(body .. "x"))
+    eq(c.state, oldState); eq(c.inSeq, seq)
 end)
-check("protocol: cap is four, fifth join times out without displacing anyone", function()
-    local sim = simulation(5)
-    for i = 2, 4 do sim:connect(i) end
-    local h, fifth = sim.nodes[1].net, sim.nodes[5].net
-    assert(fifth:join(h.name, h.sid)); sim:step(13)
-    eq(h:count(), 4); eq(fifth.mode, "idle"); assert(string.find(fifth.status, "timed out", 1, true))
+check("protocol: spectator late join has world but no avatar, score, action or start; role changes are sequenced", function()
+    local sim = simulation(3); local h = sim.nodes[1].net
+    h:start(); h.state.stage, h.state.boss, h.state.hp[4], h.state.players[1].score = 3, 14, 0, 745
+    local c = sim:connect(2, "spectate")
+    eq(c.role, "spectate"); assert(not c.slot); eq(h:count(), 1); eq(h:spectatorCount(), 1)
+    eq(c.state.stage, 3); eq(c.state.hp[4], 0); eq(c.state.players[1].score, 745)
+    assert(not c:action("R")); assert(not c:start()); assert(not h:receive(c.name, input(c, 1, "R")))
+    assert(c:setRole("play")); sim:wait(function() return c.role == "play" end); sim:step(2)
+    local slot = c.slot; eq(c.state.players[slot].score, 0)
+    local old = input(c, 2, "R")
+    assert(c:setRole("spectate")); sim:wait(function() return c.role == "spectate" end); sim:step(2)
+    assert(not h.state.players[slot]); assert(not c.state.players[slot]); assert(not h:receive(c.name, old))
+    assert(c:setRole("play")); sim:wait(function() return c.role == "play" end); sim:step(2)
+    assert(not h:receive(c.name, old)); assert(not h:receive(c.name, "R2|R|" .. h.sid .. "|" .. c.joinToken .. "|" .. c.generation .. "|1|s"))
+    eq(c.role, "play")
 end)
-check("protocol: leave/rejoin has a fresh token and stale actions cannot affect a reused slot", function()
-    local sim = simulation(2); sim:connect(2)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    h:start(); sim:step(0.4); local oldToken = c.joinToken
-    c:leave(); sim:step(0.4); eq(h:count(), 1)
-    sim:connect(2); assert(c.joinToken ~= oldToken)
-    assert(not h:receive(c.name, input(c, 9999, "R", nil, oldToken)))
-    eq(h.state.players[c.slot].x, 1)
-    local oldRemoval = table.concat({"R1", "M", h.sid, 2, c.slot, "-", "-"}, "|")
-    assert(not c:receive(h.name, oldRemoval)); eq(c.mode, "client")
+check("protocol: cooperative damage, dropped snapshot healing and paused shared host", function()
+    local sim = simulation(2); local c = sim:connect(2); local h = sim.nodes[1].net
+    h:start(); sim:step(2); sim:act(1, "R"); sim:act(2, "R"); sim:act(1, "P"); sim:act(2, "P")
+    eq(h.state.hp[1], 0); eq(c.state.hp[1], 0); eq(c.state.players[1].score, 10); eq(c.state.players[c.slot].score, 10)
+    c:setCombat(true); assert(not c:action("R")); c:setCombat(false)
+    local old = input(c, 100, "R"); h:setCombat(true); sim:step(2); assert(c.state.paused); assert(not c:action("R"))
+    sim:step(36); eq(h:count(), 2); eq(c.mode, "client")
+    h:setCombat(false); sim:step(2); assert(not h:receive(c.name, old)); assert(not c.state.paused)
+    sim.drop = function(p) return string.sub(p.payload, 1, 4) == "R2|S" end
+    assert(h:action("R")); sim:step(3); eq(c.state.players[1].x, 2)
+    sim.drop = nil; sim:step(2); eq(c.state.players[1].x, 3)
 end)
-check("protocol: roster departure removes members and host departure ends client session", function()
-    local sim = simulation(3); sim:connect(2); sim:connect(3)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    local roster = { [h.name] = true, [c.name] = true }
-    h:setRoster(roster, true); eq(h:count(), 2)
-    c:setRoster({[c.name] = true}, true); eq(c.mode, "idle")
-    assert(string.find(c.status, "Host left", 1, true))
-    h:setRoster({[h.name] = true}, false); eq(h.mode, "idle")
+check("protocol: departures, host loss, stalled snapshots and silent spectator expire without migration", function()
+    local sim = simulation(3); local c = sim:connect(2); sim:connect(3, "spectate"); local h = sim.nodes[1].net
+    sim.nodes[3].active = false; sim:step(36); eq(h:spectatorCount(), 0)
+    c:setRoster({[c.name]=true}, true); eq(c.mode, "idle"); assert(string.find(c.status, "Host left", 1, true))
+    h:setRoster({[h.name]=true}, false); eq(h.mode, "idle")
+    sim = simulation(2); c = sim:connect(2)
+    sim.drop = function(p) return string.sub(p.payload, 1, 4) == "R2|S" end
+    sim:step(21); eq(c.mode, "idle"); assert(string.find(c.status, "timed out", 1, true))
+    sim = simulation(2); c = sim:connect(2); h = sim.nodes[1].net
+    local sid = h.sid; h:leave(); sim:step(1); eq(c.mode, "idle"); assert(h:host()); assert(h.sid ~= sid)
+    assert(not h:receive(c.name, "R2|J|" .. sid .. "|old|p"))
 end)
-check("protocol: silent host timeout and silent guest timeout are bounded, no migration", function()
-    local sim = simulation(2); sim:connect(2)
-    sim.nodes[1].active = false; sim:step(16)
-    eq(sim.nodes[2].net.mode, "idle"); assert(string.find(sim.nodes[2].net.status, "timed out", 1, true))
-    sim = simulation(2); sim:connect(2); sim.nodes[2].active = false; sim:step(21)
-    eq(sim.nodes[1].net:count(), 1)
+check("protocol: world presence removes an expired guest even when its removal record is lost", function()
+    local sim = simulation(2); local c = sim:connect(2); local h = sim.nodes[1].net
+    sim.drop = function(p)
+        return p.sender == c.name or string.sub(p.payload, 1, 4) == "R2|M"
+    end
+    sim:step(38); eq(h:count(),1); eq(c.mode,"idle")
+    assert(string.find(c.status,"Removed",1,true))
 end)
-check("protocol: host leave notifies clients and old sessions cannot resume", function()
-    local sim = simulation(2); sim:connect(2)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    local sid = h.sid; h:leave(); sim:step(0.4); eq(c.mode, "idle")
-    assert(h:host()); assert(h.sid ~= sid); sim:step(0.4)
-    assert(not h:receive(c.name, "R1|J|" .. sid .. "|stale")); eq(h:count(), 1)
+check("protocol: counter saturation never wraps to replayable generations or sequences", function()
+    local sim = simulation(2); local c = sim:connect(2); local h = sim.nodes[1].net
+    h:start(); sim:step(2); c.outSeq = 999999; assert(not c:action("R"))
+    c.roleSeq = 999999; assert(not c:setRole("spectate"))
+    h.snapshotSeq = 999999; h:snapshot(); eq(h.mode,"idle")
+    sim:step(1); eq(c.mode,"idle")
 end)
-check("protocol: combat disables guest input and host combat pauses shared gameplay", function()
-    local sim = simulation(2); sim:connect(2)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    h:start(); sim:step(0.4); c:setCombat(true); assert(not c:action("R"))
-    c:setCombat(false); h:setCombat(true); sim:step(0.4)
-    assert(c.state.paused); assert(not c:action("R")); assert(not h:action("R"))
-    sim:step(21); eq(h:count(), 2); eq(c.mode, "client") -- heartbeats continue in combat
-    h:setCombat(false); sim:step(0.4); assert(not c.state.paused); sim:act(2, "R")
-end)
-check("protocol: dropped snapshot self-heals on next full state; delayed state is ignored", function()
-    local sim = simulation(2); sim:connect(2)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    h:start(); sim:step(0.5)
-    sim.drop = function(packet) return string.sub(packet.payload, 1, 4) == "R1|S" end
-    h:action("R"); sim:step(0.7); eq(c.state.players[1].x, 1)
-    sim.drop = nil; sim:step(0.5); eq(c.state.players[1].x, 2)
-end)
-check("protocol: throttling, fixed queue, coalescing, bytes and inbound flood bounds", function()
+check("protocol: lost admission record heals with retries without duplicate membership", function()
     local sim = simulation(2); local h, c = sim.nodes[1].net, sim.nodes[2].net
-    local before = #sim.sent
-    for i = 1, 100 do h:enqueue("test" .. i, "R1|Q") end
-    assert(#h.queueOrder <= 24)
-    for i = 1, 100 do h:enqueue("state", N.encodeState(h.state, h.sid, i)) end
-    assert(#h.queueOrder <= 24)
-    assert(not h:enqueue("oversize", string.rep("x", 256)))
-    local start = sim.time; sim:step(2)
-    local count = 0
-    for i = before + 1, #sim.sent do if sim.sent[i].sender == h.name then count = count + 1 end end
-    assert(count <= 10 + math.ceil((sim.time - start) * 8), "outbound token bucket exceeded")
+    sim.drop = function(p) return string.sub(p.payload, 1, 4) == "R2|M" end
+    assert(c:join(h.name, h.sid)); sim:step(5); eq(c.mode, "joining"); eq(h:count(), 2)
+    sim.drop = nil; sim:wait(function() return c.mode == "client" end); eq(h:count(), 2)
+end)
+check("protocol: finite byte/message buckets, coalesced input, bounded queues and inbound floods", function()
+    local sim = simulation(2); local h, c = sim.nodes[1].net, sim.nodes[2].net
+    for i = 1, 200 do h:enqueue("test" .. i, string.rep("x", 255)) end
+    eq(#h.queueOrder, N.MAX_QUEUE); assert(not h:enqueue("oversize", string.rep("x", 256)))
+    sim:step(4)
     local accepted = 0
-    for _ = 1, 1000 do if c:receive(h.name, "R1|Q") then accepted = accepted + 1 end end
-    assert(accepted <= 24); assert(not c.receiveBuckets["Outsider-Realm"])
+    for _ = 1, 1000 do if c:receive(h.name, "R2|Q") then accepted = accepted + 1 end end
+    assert(accepted <= 24)
+    local s = M.new(); for i = 1, 25 do M.addPlayer(s, i); s.players[i] = {x=6,y=3,score=99999,hit=999} end; M.start(s)
+    for i = 1, 25 do s.players[i] = {x=6,y=3,score=99999,hit=999} end
+    local chunks = N.encodeState(s, string.rep("a",16), 999999, 999999, 999999)
+    local bytes = 0; for _, p in ipairs(chunks) do assert(#p <= 255); bytes = bytes + #p end
+    print("  25-player maximum-field world: " .. #chunks .. " chunks, " .. bytes .. " payload bytes")
 end)
-check("protocol: roster names must be real and snapshot encoding stays below 255 bytes at bounds", function()
-    local sim = simulation(2); sim:connect(2)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    local before = c.members[3]
-    assert(not c:receive(h.name, "R1|M|" .. h.sid .. "|999|3|Fake-Realm|xyz")); eq(c.members[3], before)
-    assert(not c:receive(h.name, "R1|M|" .. h.sid .. "|999|9|" .. c.name .. "|xyz"))
-    local s = M.new(); M.start(s)
-    for i = 1, 4 do M.addPlayer(s, i); s.players[i] = {x = 6, y = 3, score = 99999, hit = 999} end
-    local encoded = N.encodeState(s, string.rep("a", 16), 999999)
-    assert(#encoded <= 255); print("  Maximum configured snapshot fixture: " .. #encoded .. " bytes")
-end)
-check("protocol: malformed/fuzz input cannot crash or grow player/queue state", function()
-    local sim = simulation(2); sim:connect(2)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    local samples = { "", "R1", "R1|", "R1|I", "R1|M||||||||", "R1|A|x|p|999", "R1|S|x|nan", "R2|Q", "R1|J|!|x" }
+check("protocol: invalid member records, fuzz and bounded expiring advertisements", function()
+    local sim = simulation(10); local c = sim:connect(2); local h = sim.nodes[1].net
+    assert(not c:receive(h.name, "R2|M|" .. h.sid .. "|999|3|Fake-Realm|x|2|3|0"))
+    assert(not c:receive(h.name, "R2|M|" .. h.sid .. "|999|41|" .. c.name .. "|x|2|3|0"))
+    local samples = {"", "R2", "R2|", "R2|I", "R2|M||||||||", "R2|A|x|p|999|0", "R2|S|x|nan", "R1|Q", "R2|J|!|x|p"}
     for _, sample in ipairs(samples) do h:receive(c.name, sample); c:receive(h.name, sample) end
-    for i = 1, 300 do
-        sim:step(0.05)
-        local noise = "R1|" .. string.rep(string.char(32 + i % 90), i % 240)
-        h:receive(c.name, noise); c:receive(h.name, noise)
+    for i = 1, 100 do sim:step(0.1); h:receive(c.name, "R2|" .. string.rep(string.char(32+i%90), i%240)) end
+    eq(h:count(), 2); eq(c.mode, "client")
+    for i = 2, 10 do assert(h:receive(sim.nodes[i].name, "R2|A|lobby|l|1|0") == (i <= 9)) end
+    eq(#h:lobbyList(), 8); sim:step(16); eq(#h:lobbyList(), 0)
+end)
+check("protocol: forty 96-byte-name members join in-progress, role fallback and simultaneous rejoin", function()
+    local sim = simulation(40, true); local h = sim.nodes[1].net
+    h:start(); h.state.players[1].score = 100; sim:step(2)
+    local begun = sim.time
+    for i = 2, 40 do assert(sim.nodes[i].net:join(h.name, h.sid)) end
+    sim:wait(function()
+        for i = 2, 40 do if sim.nodes[i].net.mode ~= "client" then return false end end
+        return true
+    end, 89)
+    local joinTime = sim.time - begun
+    eq(h:count(), 25); eq(h:spectatorCount(), 15); sim:step(25)
+    local spectator, player
+    for i = 2, 40 do
+        local c = sim.nodes[i].net
+        eq(c:count(), 25); eq(c:spectatorCount(), 15); eq(c.state.players[1].score, 100)
+        eq(c:count() + c:spectatorCount(), 40)
+        if c.role == "spectate" then spectator = i; assert(not c.slot); assert(string.find(c.status, "full", 1, true)) else player = i end
+        for slot = 1, 25 do assert(c.members[slot] and #c.members[slot].name == 96) end
     end
-    eq(h:count(), 2); eq(c.mode, "client"); assert(#h.queueOrder <= 24)
-end)
-check("protocol: inputs from a previous stage/replay or future snapshot are rejected", function()
-    local sim = simulation(2); sim:connect(2)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    h:start(); sim:step(0.5); local oldState = c.inSeq
-    h.state.phase, h.state.wait = "clear", 0.1; sim:step(0.8)
-    eq(c.state.stage, 2)
-    assert(not h:receive(c.name, input(c, 100, "R", nil, nil, oldState)))
-    assert(not h:receive(c.name, input(c, 100, "R", nil, nil, h.snapshotSeq + 1)))
-    eq(h.state.players[c.slot].x, 1)
-    h.state.phase = "victory"; assert(h:start()); sim:step(0.4)
-    assert(not h:receive(c.name, input(c, 100, "R", nil, nil, oldState)))
-    sim:act(2, "R"); eq(h.state.players[c.slot].x, 2)
-end)
-check("protocol: lost membership heals through retried join without duplicate players", function()
-    local sim = simulation(2); local h, c = sim.nodes[1].net, sim.nodes[2].net
-    sim.drop = function(packet) return string.sub(packet.payload, 1, 4) == "R1|M" end
-    assert(c:join(h.name, h.sid)); sim:step(3); eq(c.mode, "joining"); eq(h:count(), 2)
-    sim.drop = nil; sim:step(2); eq(c.mode, "client"); eq(h:count(), 2)
-end)
-check("protocol: periodic membership cannot mask a stalled world snapshot stream", function()
-    local sim = simulation(2); sim:connect(2)
-    sim.drop = function(packet) return string.sub(packet.payload, 1, 4) == "R1|S" end
-    sim:step(16); eq(sim.nodes[2].net.mode, "idle")
-    assert(string.find(sim.nodes[2].net.status, "timed out", 1, true))
-end)
-check("protocol: lobby cache is capped at eight and advertisements expire", function()
-    local sim = simulation(10); local h = sim.nodes[1].net
-    for i = 2, 10 do assert(h:receive(sim.nodes[i].name, "R1|A|lobby|l|1") == (i <= 9)) end
-    eq(#h:lobbyList(), 8); sim:step(13); eq(#h:lobbyList(), 0)
-end)
-check("protocol: two-client full four-boss victory, personal scores and synchronized replay", function()
-    local sim = simulation(2); sim:connect(2)
-    local h, c = sim.nodes[1].net, sim.nodes[2].net
-    h:start(); sim:step(0.4)
-    local function walk(index, x)
-        local n = sim.nodes[index].net
-        while n.state.players[n.slot].y > 0 do sim:act(index, "D") end
-        while n.state.players[n.slot].x < x do sim:act(index, "R") end
-        while n.state.players[n.slot].x > x do sim:act(index, "L") end
+    local watcher, actor = sim.nodes[spectator].net, sim.nodes[player].net
+    assert(watcher:setRole("play")); sim:wait(function() return watcher.requestedRole == nil end, 15)
+    eq(watcher.role, "spectate"); assert(not watcher:action("P")); assert(not watcher:start())
+    assert(actor:setRole("spectate")); sim:wait(function() return actor.role == "spectate" end, 15)
+    assert(watcher:setRole("play")); sim:wait(function() return watcher.role == "play" end, 15)
+    eq(h:count(), 25); eq(h:spectatorCount(), 15); sim:step(2)
+    -- Reload/rejoin while still admitted preserves the host-owned avatar/score,
+    -- but requires new host generation. All 39 guests reconnect concurrently.
+    local old = {}
+    for i = 2, 40 do
+        local c = sim.nodes[i].net; old[i] = c.generation
+        local role = c.role; c:reset("simulated reload"); assert(c:join(h.name, h.sid, role))
     end
-    for stage = 1, 4 do
-        eq(h.state.stage, stage); eq(c.state.stage, stage)
-        for tower, x in ipairs(M.TOWERS) do
-            local actor = tower == 2 and 2 or 1
-            walk(actor, x)
-            for _ = 1, 3 do sim:act(actor, "U") end
-            for _ = 1, 3 do sim:act(actor, "P"); sim:act(actor, "P"); sim:act(actor, "D") end
+    sim:wait(function()
+        for i = 2, 40 do if sim.nodes[i].net.mode ~= "client" then return false end end
+        return true
+    end, 89)
+    sim:step(25)
+    for i = 2, 40 do
+        local c = sim.nodes[i].net; assert(c.generation > old[i]); eq(c.mode, "client"); worldSame(h.state,c.state)
+    end
+    eq(h:count(), 25); eq(h:spectatorCount(), 15)
+    print(string.format("  40 maximum-name members: admission %.1fs; host %.2f msg/s, %.1f payload B/s (%.1f charged B/s); max queue %d, snapshot gap %.1fs", joinTime,
+        sim.nodes[1].packets/sim.time,sim.nodes[1].bytes/sim.time,sim.nodes[1].wire/sim.time,sim.maxQueue,sim.maxLag))
+end)
+check("protocol: sustained real 40-node broadcasts, 25 actors, 15 spectators, loss/reorder, combat and four shared bosses", function()
+    local sim = simulation(40); local h = sim.nodes[1].net
+    h:start(); sim:step(2)
+    for i = 2, 40 do assert(sim.nodes[i].net:join(h.name, h.sid, i > 25 and "spectate" or "play")) end
+    sim:wait(function()
+        for i = 2, 40 do if sim.nodes[i].net.mode ~= "client" then return false end end; return true
+    end, 60)
+    sim:step(22)
+    eq(h:count(), 25); eq(h:spectatorCount(), 15)
+    sim.jitter, sim.duplicates = true, true
+    sim.drop = function(p, _, index) return (p.serial * 7 + index * 11) % 23 == 0 end -- 4.35% per-recipient loss
+    local startTime, startPackets, startBytes = sim.time, sim.nodes[1].packets, sim.nodes[1].bytes
+    local startWire = sim.nodes[1].wire
+    local function drive()
+        -- Each active client chooses from its own delayed authoritative snapshot.
+        -- All 25 operate continuously; no direct state edits/teleports are used.
+        for i = 1, 25 do
+            local n = sim.nodes[i].net; local s = n.state; local p = s and s.players[n.slot]
+            if p and s.phase == "play" and not s.paused then
+                local target, floor
+                for tower = 1, 3 do
+                    for f = 3, 1, -1 do if s.hp[(tower-1)*3+f] > 0 then target, floor = M.TOWERS[tower], f; break end end
+                    if target then break end
+                end
+                local action
+                if target then
+                    if p.x ~= target then action = p.y > 0 and "D" or (p.x < target and "R" or "L")
+                    elseif p.y < floor then action = "U" elseif p.y > floor then action = "D" else action = "P" end
+                else
+                    if p.y > 0 then action = "D" elseif p.x < 3 then action = "R" elseif p.x > 5 then action = "L" else action = "P" end
+                end
+                n:action(action)
+            end
         end
-        assert(not M.cityAlive(h.state)); assert(not M.cityAlive(c.state))
-        walk(1, 4); walk(2, 4)
-        local actor = 1
-        while h.state.phase == "play" do sim:act(actor, "P"); actor = 3 - actor end
-        if stage < 4 then sim:step(2.3) end
     end
-    eq(h.state.phase, "victory"); eq(c.state.phase, "victory")
-    eq(M.total(h.state), 2380); eq(M.total(c.state), 2380)
-    assert(h.state.players[1].score > 0 and h.state.players[2].score > 0)
-    eq(h.state.players[2].score, c.state.players[2].score)
-    assert(h:start()); sim:step(0.5); eq(c.state.phase, "play"); eq(c.state.stage, 1); eq(M.total(c.state), 0)
+    local pauseDone, deadline, maxStage = false, sim.time + 240, 1
+    while h.state.phase ~= "victory" and sim.time < deadline do
+        if h.state.stage >= 2 and not pauseDone then
+            h:setCombat(true); local stage, boss, total = h.state.stage, h.state.boss, M.total(h.state)
+            sim:step(12, drive); eq(h.state.stage,stage); eq(h.state.boss,boss); eq(M.total(h.state),total)
+            for i = 2, 40 do assert(sim.nodes[i].net.state.paused); eq(sim.nodes[i].net.mode,"client") end
+            h:setCombat(false); pauseDone = true
+        end
+        sim:step(0.1, drive); maxStage = math.max(maxStage, h.state.stage)
+    end
+    eq(maxStage, 4); eq(h.state.phase,"victory"); assert(pauseDone)
+    -- Keep all 40 connected and drive high-frequency harmless punches/movement
+    -- after replay, then settle with zero loss for exact full-world convergence.
+    sim:step(4); eq(M.total(h.state),2380)
+    for i = 2, 40 do eq(sim.nodes[i].net.mode,"client"); eq(sim.nodes[i].net.state.stage,4) end
+    assert(h:start()); sim:step(3)
+    sim:step(30, function()
+        for i = 1, 25 do local c = sim.nodes[i].net; c:action(math.floor(sim.time*5)%2 == 0 and "R" or "L") end
+    end)
+    sim.drop, sim.jitter, sim.duplicates = nil, nil, nil; sim:step(25)
+    for i = 2, 40 do
+        local c = sim.nodes[i].net; eq(c.mode,"client"); worldSame(h.state,c.state)
+        eq(c:count(),25); eq(c:spectatorCount(),15)
+        if i > 25 then eq(c.role,"spectate"); assert(not c.slot); assert(not c:action("P")) end
+    end
+    local seconds = sim.time-startTime; local allPackets, allBytes, heartbeats = 0,0,0
+    for _, p in ipairs(sim.sent) do
+        if p.time >= startTime then
+            allPackets, allBytes = allPackets+1,allBytes+#p.payload
+            if string.sub(p.payload,1,4) == "R2|K" then heartbeats=heartbeats+1 end
+        end
+    end
+    assert(heartbeats >= 39*math.floor(seconds/8-2), "spectator/player keepalives missing")
+    assert((sim.nodes[1].wire-startWire)/seconds <= N.BYTE_RATE + N.BYTE_BURST/seconds)
+    assert(sim.maxLag < 20, "snapshot starvation under join/input traffic")
+    print(string.format("  Sustained %.1fs: host %.2f msg/s, %.1f payload B/s, %.1f charged B/s; group %.2f msg/s, %.1f payload B/s; %d heartbeats; max queue %d; snapshot gap %.1fs", seconds,
+        (sim.nodes[1].packets-startPackets)/seconds,(sim.nodes[1].bytes-startBytes)/seconds,(sim.nodes[1].wire-startWire)/seconds,
+        allPackets/seconds,allBytes/seconds,heartbeats,sim.maxQueue,sim.maxLag))
 end)
-check("protocol: solo needs no group/network and combat never starts it", function()
+check("protocol: solo needs no network and combat never starts it", function()
     local sent = 0
-    local n = N.new({ name = "Solo-Realm", now = function() return 0 end, token = function() return "solo" end,
-        send = function() sent = sent + 1 end })
-    assert(not n:host()); n:setCombat(true); assert(not n:solo())
-    n:setCombat(false); assert(n:solo()); eq(n.state.phase, "play"); n:tick(1); eq(sent, 0)
-    n:setRoster({[n.name] = true}, false); eq(n.mode, "solo"); n:leave(); eq(sent, 0)
+    local n = N.new({name="Solo-Realm", now=function() return 0 end,token=function() return "solo" end,send=function() sent=sent+1 end})
+    assert(not n:host()); n:setCombat(true); assert(not n:solo()); n:setCombat(false); assert(n:solo())
+    eq(n.role,"play"); eq(n.slot,1); eq(n:spectatorCount(),0); n:tick(1); eq(sent,0)
+    n:setRoster({[n.name]=true},false); eq(n.mode,"solo"); n:leave(); eq(sent,0)
 end)

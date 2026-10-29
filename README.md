@@ -1,91 +1,92 @@
 # Rampage — FOUR MORE BOSSES!
 
-**<Toast> has just FOUR MORE BOSSES!** A small, opt-in cooperative city-smashing minigame for **TBC Classic 2.5.6 (Interface 20506)** raid downtime. Inspired by classic climb-and-smash arcade play, with original geometric monsters and fictional encounters. Not affiliated with the original Rampage game or its owners.
+**<Toast>'s pocket raid-break arcade.** Original monsters climb and smash a shared city, then flatten four fictional bosses. For **TBC Classic 2.5.6 / Interface 20506**. Inspired by classic climb-and-smash games; no copied Rampage artwork/audio or affiliation claimed.
 
-## Status
+## Current playtest: keyboard + 25-player polish
 
-First playable MVP implemented for feature [#1](https://github.com/lemillermicrosoft/Rampage/issues/1). Automated rules, simulated multiplayer, Lua 5.1 syntax and mocked TOC/UI tests pass. **Not yet verified inside an actual TBC client**; see [QA.md](QA.md) for the real-client checklist. CurseForge publication remains deferred ([#2](https://github.com/lemillermicrosoft/Rampage/issues/2)); no release or merge is implied.
+This iteration adds **25 active monsters and up to 40 total participants**, including read-only spectators; streamlined late join; opt-in keyboard controls; an original warm pixel-style city/creature overhaul; and optional locally installed BlasterMaster sounds. [PR #3](https://github.com/lemillermicrosoft/Rampage/pull/3) covers the MVP and [iteration #4](https://github.com/lemillermicrosoft/Rampage/issues/4). **Not merged/released.** CurseForge ID is deliberately deferred in [#2](https://github.com/lemillermicrosoft/Rampage/issues/2).
 
-## Install
+The user demonstrated original-MVP solo play in WoW. **This new keyboard/UI/network iteration has automated and mock-layout verification, not a live 25-player raid or native keyboard/taint sign-off.** See [QA.md](QA.md).
 
-Copy the `Rampage` folder into your TBC client's `Interface/AddOns/` directory, for example:
+## Install / update
 
-```text
-World of Warcraft/_anniversary_/Interface/AddOns/Rampage/
-```
+Extract the candidate ZIP so `Interface/AddOns/Rampage/Rampage.toc` exists. Its runtime files are `Model.lua`, `Protocol.lua`, `Input.lua`, `Sound.lua`, `UI.lua`, `Rampage.lua`, and `Media/icon.png`. Node/npm/tests are development-only, never WoW dependencies.
 
-The folder must contain `Rampage.toc`, `Model.lua`, `Protocol.lua`, `UI.lua`, `Rampage.lua` and `Media/icon.png`. Enable the addon at character selection, then type **`/rampage`**. Both players need the same addon build for co-op. Node/npm and the `tests` directory are development tooling only, never WoW runtime dependencies.
+Enable Rampage at character selection and `/reload` when safe. **All participants must use this same R2 build**; the original four-player R1 candidate cannot join R2 games. Updates do not change your SavedVariables file externally. Personal best/window position are retained; new sound settings default off.
 
-## Quick play
+## Get playing
 
-- **Solo:** click **Solo practice**, or `/rampage solo`. No group needed.
-- **Co-op:** form a normal party/raid. One player clicks **Host**. Friends click **Find lobbies**, use **Next host** if necessary, then **Join selected**. The host clicks **Start / replay**.
-- **Maximum four monsters per lobby, including the host.** Separate lobbies can coexist in the same raid. Only the host starts/replays a shared game.
-- **Leave** explicitly exits. **X** only hides the window; `/rampage` brings it back. Incoming messages never open a window.
-- Late join is supported even after Start: current city, boss, positions and scores synchronize automatically.
+1. **Solo:** `/rampage solo` or Solo practice.
+2. **Raid/party:** `/rampage`. The visible window automatically looks for current group games. Click **JOIN GAME**, or **SPECTATE** to watch. Joining is always explicit; incoming messages never open a window.
+3. If nobody is hosting, **HOST & START** opens a game immediately. **Next host** is the secondary multiple-lobby selector. Late join works after a stage has begun.
+4. Click **PLAY • GRAB KEYS**. Hold **WASD or arrows** to move/climb/descend; **Space** punches. The most recently held gameplay key wins, with a global approximately five-actions/second limit. Compact mouse buttons remain available.
+5. **Escape** releases keyboard capture. Click PLAY to recapture. Close hides and releases keys; **Leave** exits the session.
 
 ### Smash school
 
-All gameplay uses discrete mouse clicks. There are **no global keybindings or keyboard capture**.
+- Walk horizontally on the ground to tower lanes **2, 4, 6**.
+- Climb to the top. Punch twice per floor; descend between floors. Flattening a tower drops its climbers to the street.
+- Flatten all three towers to expose the boss. Punch from ground lanes **3–5**.
+- Defeat **The Crumb Baron**, **Permitron 9000**, **The Snack Tax**, then **Queuezilla**. Boss HP is 10/12/14/16, with two-second stage transitions.
+- Individual hit/collapse/boss rewards feed team fame. Current participants' scores count; leaving or switching to spectate removes that avatar's current score. Returning to play starts at zero. Local personal best remains.
+- **25 active / 40 total:** a full 25-player game still has room for 15 spectators. Unused active capacity can hold more spectators within the total ceiling. Active slots are never stolen; full active joins fall back to spectator. Spectators can explicitly **Switch to Play** when space opens. The host remains a player and owns Start/replay.
 
-1. Walk left/right **on the ground** to one of the three towers (lanes **2, 4, 6**).
-2. **Climb** three times to the top. **PUNCH!** twice to destroy that floor.
-3. **Down**, punch twice; **Down**, punch twice. The tower collapses into rubble and its climbers drop safely to the street. You can also punch the lowest floor from the ground.
-4. Flatten all three towers together to remove the boss's shield. Stand on the ground in the middle three lanes (**3–5**) and punch the boss.
-5. Defeat **The Crumb Baron**, **Permitron 9000**, **The Snack Tax**, and **Queuezilla**. Two-second scene changes lead to shared victory: **ZERO MORE BOSSES!**
+## Keyboard and raid safety
 
-Boss health is 10 / 12 / 14 / 16. This slice is intentionally forgiving: no player deaths, countdown failure, hazards or combat interactions. The city is truly shared: one player's punch damages the same floor another player is smashing; everyone sees the same boss and victory.
+- An ordinary, opt-in frame handles keys. **No permanent or override bindings, protected spell buttons, combat automation, public chat or raid sound messages.**
+- Capture is allowed only while the window is visible and an active player can play. Spectators never capture gameplay keys.
+- Escape, unknown keys (including Enter/slash/chat shortcuts), edit-box focus, hide, leave, world departure, combat, Alt/Ctrl/Meta shortcuts and long frame interruptions release capture and held keys. Unknown keys propagate to WoW.
+- Physical key-state reconciliation stops a repeat after a missed key-up when `IsKeyDown` is available. A native window-focus helper is guarded, not assumed present. **Taskbar switching and exact native key propagation still require the manual test.**
+- Combat hides the window and releases the keyboard. Host combat pauses everyone; guest combat blocks only that guest's local input. The previous window can return after combat, but **keyboard capture never automatically returns**.
+- The addon hides its non-secure capture frame instead of changing restricted propagation during combat. Actual client taint behavior remains a release gate.
 
-### Fame and safety
+## Optional local BlasterMaster audio
 
-- Each floor hit earns 10 personal fame, the last hit collapsing a tower adds 40, boss hits earn 15, and the final boss hit adds 100. Team fame is the sum of current participants' scores.
-- Leaving removes that participant from the current team total. Late entrants start at zero. Your **local personal best** and window position are saved in `RampageDB`; no raid-wide records or account data are transmitted.
-- Punches/steps are limited to roughly five per second. Clients render authoritative full states at up to four snapshots/second; there is no speculative movement. Expect ordinary network latency, not action-game precision.
-- **Combat hides the window and blocks local game input.** Host combat pauses the shared game, including stage transitions. A guest entering combat is unavailable locally while the others can continue. Heartbeats still run. The window returns only if it was already open before combat.
-- No public chat announcements, sounds, invites, combat automation, protected action buttons, or copied art/audio. Help/status messages are local only.
+**Local BM: OFF** is the default. Opt in with the button; **Mute Rampage** independently silences cues.
 
-## Commands
+Rampage calls the already-installed `BlasterMaster_GetSfxPath(role)` accessor for `crit` (local impact), `combatStart` (collapse/stage), and `levelUp` (boss/victory). It honors that provider's remapping, **None**, and pre-rendered volume variants. Missing/disabled/broken provider or failed `PlaySoundFile` stays silent. No hard dependency, copied game audio, settings hooks, fallback surprises or global volume/CVar changes.
 
-| Command | Action |
-| --- | --- |
-| `/rampage` | Toggle the window, out of combat |
-| `/rampage help` | Print local help |
-| `/rampage solo` | Start solo practice |
-| `/rampage host` | Open a four-player group lobby |
-| `/rampage find` | Request recent group lobbies and show the window |
-| `/rampage join [Name-Realm]` | Join a discovered host; without a name, first sorted host |
-| `/rampage start` | Host/solo start or replay after victory |
-| `/rampage leave` | Exit the current lobby/game |
+Only local hits and rare authoritative transitions make cues. Spectators hear major transitions only. Cues are deduplicated, globally spaced by at least 1.3–2.2 seconds and per-cue throttled; late join/reopen does not play a catch-up burst. Playback uses the normal **SFX** channel. Per-call gain is not available here; configure existing provider variants or WoW SFX volume yourself.
 
-## Networking and limits
+## Graphics / performance
 
-- Only `PARTY` / `RAID` **addon messages**, prefix `ToastRampage1`; no whispers, guild, battleground/instance-chat transport, or public chat.
-- Actual canonical `Name-Realm` sender must be on the current group roster. Host/session, membership token, numeric bounds, message shape and sequence numbers are checked. Inputs also reference a snapshot from the current stage/replay, so delayed old-stage clicks are discarded.
-- Full world snapshots avoid delta-chain corruption. Membership records carry monotonic revisions. Joining is retried and synchronized, never automatically accepted by a non-joining client.
-- Every payload is at most 255 bytes. Per-addon outbound budget: **8 messages/second, burst 10**; queue capped at **24**, replaceable snapshots coalesced. Inbound limit per roster sender: **16/second, burst 24**. At most **8** discovered lobbies are cached.
-- Ads/membership refresh every 4 seconds; ads expire after 12 seconds. Join attempts stop after 12 seconds (including a full lobby). Guests heartbeat every 3 seconds. Clients stop after 15 seconds without a newer host snapshot; hosts remove silent guests after 20 seconds.
-- Group departure ends/removes the relevant session/member. **No host migration**: if the host leaves, disconnects or reloads, find or host a new game. Lost inputs are not retried; click again if needed. Lost snapshots heal on the next full snapshot.
-- This is friendly group play, not a cheat-proof competitive service: the host is authoritative. Session/member tokens are correlation identifiers, not credentials.
+Original stepped creature silhouettes, expressive faces, walk/climb/punch poses, local-player highlight, bounded overlap offsets, 25 hover roster chips, boss health/shield display, warm skyline, cracked windows, rubble, dust, stage banners and victory confetti. Window layout is 900×660 and scales down to fit available UI space.
 
-Protocol details: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+Fixed runtime pools: **93 frames, 1,190 textures, 83 font strings**, including **72 reusable particles**, unchanged after 500 animated 25-player renders in mocks. Visual smoothing targets roughly 30 Hz, **not the network tick rate**.
 
-## Development / verification
+## Network performance and limits — read before a big raid
+
+R2 uses ordinary PARTY/RAID addon messages only. Host authority verifies the actual roster sender, session, host-issued admission generation, role and input epoch/sequence. It supports late join, reconnect, sequenced role changes, atomic full-state fragments, expired members, malformed/replayed packet rejection and no host migration.
+
+- Every packet ≤255 payload bytes. Full 25-player state: at most **2 fragments**, maximum-field fixture **340 payload bytes combined**.
+- Per-sender hard budget: **8 messages/s and 700 charged bytes/s**, bursts 10 messages/1,000 charged bytes (16-byte accounting allowance per packet). Queue cap 128; partial assembly cap 3×2 parts, expiry 6s.
+- **Authoritative snapshots every 1.25 seconds (0.8 Hz)**, potentially longer with loss/throttling. Keyboard samples about 5 Hz but there is no speculative client movement. A remote player's feedback can therefore lag; this is not a precision-action networking claim. Full-state smoothing favors a conservative traffic budget.
+- Names/roles are sent on a rotating broadcast schedule, separately from world fragments. Initial names can populate gradually. Forty simultaneous maximum-length-name clients admitted in **23 seconds** in the test fixture; the bounded join timeout is 90 seconds.
+- Guests heartbeat every 8 seconds; stalled hosts expire at 20 seconds, silent guests at 35 seconds. Host departure requires a new game. Lost world fragments heal on a later complete snapshot. Inputs coalesce under send pressure and are not retransmitted.
+- **Measured 124.7s simulated 25+15 run:** four bosses, combat pause, replay, movement, 4.35% per-recipient loss plus duplication/reordering; exact final convergence. Host averaged **3.47 messages/s / 307.5 payload B/s**; whole group **60.79 messages/s / 1,968 payload B/s**; maximum observed world gap 2.9s.
+
+These are finite-budget simulations, **not measurements from 40 real WoW clients**, and do not account for every other addon sharing the client transport. Real raid latency/traffic and usability need a guild playtest. Detailed protocol: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+
+## Slash commands
+
+`/rampage` toggle; `solo`; `host`; `find`; `join [Name-Realm]`; `spectate [Name-Realm]`; `play`; `start`; `leave`; `help`.
+
+`host` opens a lobby without starting (unlike the main Host & Start button). `play` requests an active slot but does not capture keys from chat; click PLAY afterward. Only host/solo can Start or replay.
+
+## Development
 
 ```text
 npm ci --ignore-scripts
 npm test
 npm run check:lua51
 npm audit --audit-level=moderate
+node tests/run.cjs --suite=protocol
+node tests/run.cjs --suite=wow
+node tests/ui-preview.cjs --scene raid --output docs/previews/mock-raid.svg
 ```
 
-Only pinned development dependencies: `fengari@0.1.5` and `luaparse@0.3.1` with a lockfile; `node_modules/` is ignored. **Fengari executes Lua 5.3 semantics**, not the WoW Lua 5.1 VM. `luaparse` independently checks every runtime/test Lua file using its **Lua 5.1 grammar**. Neither substitutes for in-game API, rendering, taint, or real network checks.
+**37 tests:** 8 model, 17 protocol (including 40-node simulations), 12 strict mocked WoW/UI/input/audio checks. **9 Lua files** parse as Lua 5.1 grammar. Execution uses **Fengari Lua 5.3 semantics**, not a native WoW VM. Pinned dev dependencies: Fengari 0.1.5 and luaparse 0.3.1.
 
-- `Model.lua`: deterministic rules, four stages and personal scores; no WoW APIs.
-- `Protocol.lua`: bounded host-authoritative session, transport validation and timeouts; injected clock/transport.
-- `UI.lua`: fixed pools of original geometric shapes and mouse buttons.
-- `Rampage.lua`: WoW roster/events/transport, combat gate, slash commands and local persistence.
-- `tests/`: deterministic model, multi-client network simulation and mocked TOC/UI smoke tests.
-
-See [PLAN.md](PLAN.md) for scope and [QA.md](QA.md) for exact evidence and remaining manual checks.
+`docs/previews/` contains mock renders captured from the actual `UI.lua` geometry, **not WoW screenshots**. They are review artifacts, not runtime Media and are not included in the install ZIP.
 
 Repository: https://github.com/lemillermicrosoft/Rampage

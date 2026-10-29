@@ -17,10 +17,12 @@ local function flatten(s, slot)
     end
 end
 
-check("model: explicit lobby/start, four-player cap and restart rules", function()
+check("model: explicit lobby/start, 25-player cap and restart rules", function()
     local s = M.new(); eq(s.phase, "lobby")
-    for i = 1, 4 do assert(M.addPlayer(s, i)) end
-    assert(not M.addPlayer(s, 5)); assert(not M.addPlayer(s, 1))
+    eq(M.MAX_PLAYERS, 25)
+    for i = 1, 25 do assert(M.addPlayer(s, i)) end
+    assert(not M.addPlayer(s, 26)); assert(not M.addPlayer(s, 1))
+    assert(not M.addPlayer(s, 0)); assert(not M.addPlayer(s, 1.5)); assert(not M.addPlayer(s, "2"))
     assert(not M.act(s, 1, "R")); assert(M.start(s)); assert(not M.start(s))
     eq(s.boss, 10); eq(#s.hp, 9)
 end)
@@ -76,4 +78,23 @@ check("model: removal and late addition do not reset shared city", function()
     local s = active(); M.act(s, 1, "R"); M.act(s, 1, "P")
     M.addPlayer(s, 2); eq(s.hp[1], 1); eq(s.players[2].score, 0)
     M.removePlayer(s, 2); assert(not s.players[2]); eq(s.hp[1], 1)
+end)
+check("model: all 25 monsters share tower collapse, stage reset and the four-boss total", function()
+    local s = M.new()
+    for slot = 1, 25 do assert(M.addPlayer(s, slot)) end
+    assert(M.start(s))
+    for stage = 1, 4 do
+        for slot = 1, 25 do walk(s, slot, 2); M.act(s, slot, "U") end
+        local actor = stage == 4 and 25 or stage
+        flatten(s, actor)
+        for slot = 1, 25 do eq(s.players[slot].y, 0) end
+        walk(s, actor, 4)
+        for _ = 1, 8 + stage * 2 do M.act(s, actor, "P") end
+        if stage < 4 then
+            M.tick(s, 2)
+            for slot = 1, 25 do eq(s.players[slot].x, 1); eq(s.players[slot].y, 0) end
+        end
+    end
+    eq(s.phase, "victory"); eq(M.total(s), 2380)
+    assert(s.players[25].score > 0)
 end)

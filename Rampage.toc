@@ -8,5 +8,7 @@
 
 Model.lua
 Protocol.lua
+Input.lua
+Sound.lua
 UI.lua
 Rampage.lua

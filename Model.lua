@@ -1,6 +1,6 @@
 -- Pure deterministic game rules. No WoW APIs, networking, random numbers or art assets.
 local _, addon = ...
-local M = { MAX_PLAYERS = 4, LANES = 7, FLOORS = 3 }
+local M = { MAX_PLAYERS = 25, LANES = 7, FLOORS = 3 }
 addon.Model = M
 M.BOSSES = { "The Crumb Baron", "Permitron 9000", "The Snack Tax", "Queuezilla" }
 M.ACTIONS = { L = true, R = true, U = true, D = true, P = true }
@@ -28,7 +28,7 @@ function M.cityAlive(s)
 end
 
 function M.addPlayer(s, slot)
-    if slot < 1 or slot > M.MAX_PLAYERS or s.players[slot] then return false end
+    if type(slot) ~= "number" or slot ~= math.floor(slot) or slot < 1 or slot > M.MAX_PLAYERS or s.players[slot] then return false end
     s.players[slot] = { x = 1, y = 0, score = 0, hit = 0 }
     return true
 end

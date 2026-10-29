@@ -1,61 +1,34 @@
 # Rampage — FOUR MORE BOSSES!
 
 ## Vision
+A cooperative, opt-in Toast raid-break arcade: original expressive monsters flatten a shared city and four silly bosses. Keep raid controls safe, joining simple, and changes small enough to playtest quickly.
 
-An opt-in cooperative city-smashing arcade game for <Toast> raid downtime in TBC Classic 2.5.6. Celebrate the guild's rise to fame with monsters, destructible towers, silly fictional bosses, and “just FOUR MORE BOSSES!” Take inspiration from climb-and-smash play, using original geometric art, names and jokes rather than copied assets or branding claims.
+## Current delivered scope
+- Original first playable: solo, shared destructible towers, move/climb/punch, four bosses, personal fame and host-authoritative party/raid lobbies.
+- Issue #4 iteration: **25 active / 40 total**, explicit Spectate and role switching, late join with bounded R2 chunked snapshots, one-click Join Game / Host & Start with visible-window discovery.
+- Explicit keyboard PLAY capture, WASD/arrows/Space repeat, Escape/focus/chat/hide/leave/combat releases, physical-key reconciliation, compact mouse fallback; no binding changes.
+- Warm arcade city, varied stepped creature geometry, local highlight, 25-player hover chips/overlap offsets, boss HP/shield, pooled particle/destruction/stage/victory effects, fit-to-screen scale.
+- Optional default-off external BlasterMaster role accessor; local throttled cues and spectator-major-event mode, no bundled game audio or global volume edits.
 
-## First playable scope — implemented
+## Implementation and tests
+- [x] Separate deterministic model, protocol, input, sound, UI and WoW adapter modules.
+- [x] Preserve actual roster/host/session/generation/sequence authority and bounded packet/queue/fragment state.
+- [x] Exercise 25 actors + 15 spectators in a finite-budget 40-node broadcast simulator with loss/reordering, reconnect, four bosses, replay and combat pause.
+- [x] Integrate strict input/audio/UI lifecycle mocks and fixed frame/texture pools.
+- [x] Lua 5.1 grammar checks and Fengari execution; no native VM proof implied.
+- [x] Export and inspect actual-UI mock geometry scenes, not separate concept art.
+- [ ] Actual TBC input propagation/taint/taskbar focus and visual scale verification.
+- [ ] Real two-client baseline, then 25-player raid performance/play-feel verification.
+- [ ] Actual local sound playback/remapping and mute verification.
 
-- [x] Movable `/rampage` window; solo practice; explicit party/raid Host, Find, selected Join, Start/replay and Leave. No automatic invitations or forced windows.
-- [x] Four-player cap including host; multiple independent lobbies within a normal group.
-- [x] Deterministic Lua model: ground movement, tower climbing, two-hit destructible floors, shared collapse, shielded/exposed boss and per-player fame.
-- [x] Exactly four short fictional boss stages, two-second transitions, shared victory and replay. Same basic city pattern; increasing boss HP keeps the first slice coherent.
-- [x] Original geometric monster/boss/tower shapes, colored personal score labels, punch flashes, cracks and rubble. No copied art/audio or runtime library dependencies.
-- [x] Bounded host-authoritative protocol: actual group roster identity, session/member correlation, full snapshots, revisions, sequence/duplicate/stale-stage checks, packet bounds, coalescing and rate limits.
-- [x] Explicit late join with current city/score synchronization, retried join, keepalive, timeouts, group departure and host end. No migration.
-- [x] Mouse-click controls only: no keyboard capture/global bindings, public chat/sound spam, protected actions or combat automation.
-- [x] Combat hides local UI and blocks actions; host combat pauses shared model/transitions while network liveness continues. No surprise post-combat window if it was already hidden.
-- [x] Saved local personal best and window position only.
+## Important tradeoff
+The traffic-safe R2 host currently sends complete worlds every **1.25 seconds**. Visual animation is smoother, but remote authoritative input feedback is not fast-action-game latency. Measure this with the guild before tuning the wire format/cadence or adding prediction. No claim that the simulated 40-node traffic proves Blizzard transport behavior.
 
-## Architecture / existing-options preflight
+## Deliverables and gates
+Keep the original `51b6b6d` candidate untouched for rollback. Extend unmerged PR #3 with issue #4, a distinct tested playtest ZIP, hash/manifest verification and clear native-test steps. No forced client reload/SavedVariables edits. No merge/release until `!ship`; CurseForge project ID deferred in issue #2.
 
-This user explicitly requested a custom WoW minigame. The MVP uses existing WoW frame/texture/addon-message APIs rather than pulling in a UI/network framework. Original rectangles are sufficient for the first playable. Small pure Lua modules make the rules and transport independently testable:
-
-1. `Model.lua` — deterministic rules, four bosses and scores; no WoW dependencies.
-2. `Protocol.lua` — injected clock/transport; bounded four-player host/client state machine.
-3. `UI.lua` — fixed shape/frame pools and discrete mouse controls.
-4. `Rampage.lua` — WoW identity/roster/events, transport, combat gate, slash commands, persistence.
-
-Existing development-only parser/runner packages were preferred over a bespoke Lua interpreter: exact-pinned `luaparse@0.3.1` and patched `fengari@0.1.5`, with lockfile and ignored `node_modules/`. Runtime has no npm dependency. See `docs/PROTOCOL.md` for wire format, trust boundary, budgets and recovery.
-
-## Verification — completed automatically
-
-- [x] TOC manifest exists and loads in order under API mocks; Interface **20506**.
-- [x] Separate **Lua 5.1 grammar validation** for four runtime and three Lua test files.
-- [x] **36 passing tests**: seven game rules, twenty-two protocol/network simulation, seven mocked WoW/TOC/UI smoke cases.
-- [x] Complete deterministic solo and two-client four-boss playthroughs, exact total **2380 fame**, shared victory and synchronized replay.
-- [x] Cooperative same-floor damage, independent personal scores, late stage-3 join, cap/full join, leave/rejoin and roster departure.
-- [x] Foreign/forged/stale/malformed/duplicate/rapid packets; stale-stage input; queue/rate/lobby bounds; lost state/membership; host/guest timeouts.
-- [x] No forced UI, input/combat gates, canonical same-name/different-realm identities, bounded addon-channel sends, saved best and constant frame/texture/font pools.
-- [x] Development dependency audit clean after updating the initial runner pin to 0.1.5.
-
-**Important:** Fengari executes **Lua 5.3 semantics**, not native Lua 5.1 or WoW. The Lua 5.1 parser is a separate syntax check. Mocks are not proof of actual TBC APIs, rendering, taint safety or real transport behavior.
-
-## Before calling it in-game verified
-
-- [ ] Perform the real TBC 2.5.6 solo/UI/combat/taint checklist in `QA.md`.
-- [ ] Perform two real clients in party and raid: shared damage/victory, late join, timeout/reload/departure and combat pause.
-- [ ] Check UI scale/locale, actual addon-message throttling alongside raid addons, and ordinary movement/spell bindings.
-- [ ] Capture actual playtest feedback and iterate on responsiveness/readability before broad release.
-
-## Delivery boundaries
-
-- Feature tracked in GitHub **#1**, branch `feat/issue-1-four-more-bosses`.
-- This implementation pass makes a local conventional commit; parent owns push/PR coordination.
-- No workflow/release-script, installed-skill, `.claude`, `.agent`, `CHANGELOG`, or CurseForge configuration changes.
-- CurseForge project ID/publication remains deliberately deferred in **#2**. No release or merge without explicit approval.
-- No Discord messaging or access/allowlist changes; request originated in WebChat.
-
-## Post-MVP ideas
-
-More distinct boss patterns, safe hazards, feedback animation, monster silhouettes, optional locally controlled sound, cosmetic unlocks and more Toast in-jokes. Larger lobbies, host migration, alternate transport and richer synchronization only after the simple four-player loop is proven in actual clients. No expansion of scope should precede the manual safety/playtest pass.
+## Post-playtest priorities
+1. Fix actual native focus/taint/rendering bugs first.
+2. Measure/tune remote response cadence within a realistic addon traffic budget.
+3. Refine monster animation, stage variation, optional original sound cues and tiny cooperative mechanics based on guild feedback.
+4. Host migration, hazards, rich progression and complex matchmaking remain out of this quick iteration.
