@@ -2,7 +2,7 @@
 -- TOC order: Model.lua, Protocol.lua, Input.lua, Sound.lua, UI.lua, Rampage.lua.
 local addonName, addon = ...
 local app = { now = function() return GetTime() end }
-app.VERSION = "0.3.0" -- Kept in sync with the TOC by the release packager.
+app.VERSION = "0.4.0" -- Kept in sync with the TOC by the release packager.
 addon.App = app
 local frame = CreateFrame("Frame")
 local function localMessage(message)
