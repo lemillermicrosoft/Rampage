@@ -118,6 +118,13 @@ end
 local function click(b)
     if b:IsShown() and b:IsEnabled() then b.scripts.OnClick(b) end
 end
+-- Exact engine contract fixtures, not a second movement implementation. Only
+-- their setup is synthetic; poses/geometry and position math are the real UI/M.
+local function bossFixture(s,phase,remaining,fromLane,toLane,lanes,id)
+    s.bossMotion={id=id or 1,phase=phase,remaining=remaining,fromLane=fromLane,toLane=toLane,lanes=lanes or {}}
+    s.hazard={id=id or 1,phase=phase=="windup" and "warning" or phase=="attack" and "impact" or "idle",
+        remaining=remaining,lanes=lanes or {}}
+end
 
 function runWoWSmoke()
     local app, ui = Addon.App, Addon.UI
@@ -246,40 +253,164 @@ function runWoWSmoke()
     end)
     check("WoW mock: 25-player fixed geometry pools after 500 animated renders", function()
         local frameCount, textureCount, fontCount = #frames, #textures, #fonts
-        eq(#ui.hazardLanes,7); eq(#ui.particles,72)
+        eq(#ui.hazardLanes,7); eq(#ui.particles,72); eq(#ui.bossCues,4)
+        for _,cue in ipairs(ui.bossCues) do eq(#cue.parts,12) end
         for slot=2,25 do Addon.Model.addPlayer(app.net.state,slot); app.net.members[slot]={name="Crew"..slot.."-Realm"} end
         for i=1,500 do
             for slot=1,25 do local p=app.net.state.players[slot]; p.hit=i%1000; p.x=1+(slot+i)%7 end
-            app.net.state.hazard={phase=i%3==0 and "impact" or "warning",remaining=6,lanes={1,3,7},id=i}
-            ui.burst(316,180,12,"hit"); step(0.05); ui.render()
+            app.net.state.stage=1+(i-1)%4
+            bossFixture(app.net.state,i%3==0 and "attack" or "windup",i%3==0 and 0.3 or 6,4,4,{1,3,7},i)
+            -- Exactly 500 UI renders; no adapter OnUpdate secretly doubles them.
+            now=now+0.05; ui.burst(316,180,12,"hit"); ui.render()
         end
         for slot=2,25 do Addon.Model.removePlayer(app.net.state,slot); app.net.members[slot]=nil end
+        app.net.state.stage=1; bossFixture(app.net.state,"patrol",5,4,5,{})
         eq(#frames, frameCount); eq(#textures, textureCount); eq(#fonts, fontCount)
-        print("  Fixed UI allocation fixture: " .. frameCount .. " frames, " .. textureCount .. " textures, " .. fontCount .. " font strings")
+        print("  Fixed UI allocation fixture: " .. frameCount .. " frames, " .. textureCount .. " textures, " .. fontCount .. " font strings; exactly 500 renders, 48 boss-cue textures")
     end)
     check("WoW mock: authoritative HP / KO / shield cues and seven warning / impact / recovery lanes", function()
         local s=app.net.state; local p=s.players[1]
         p.hp,p.maxHP,p.ko,p.invuln,p.kos=100,100,0,0,2
-        s.hazard={phase="warning",remaining=6,lanes={1,3,7},id=1}; ui.render()
+        bossFixture(s,"windup",6,4,4,{1,3,7}); ui.render()
         local framesBefore,texturesBefore,fontsBefore=#frames,#textures,#fonts
         assert(ui.hazardLanes[1]:IsShown() and ui.hazardLanes[3]:IsShown() and ui.hazardLanes[7]:IsShown())
         assert(not ui.hazardLanes[2]:IsShown()); assert(ui.hazardText:GetText():find("IN 6s",1,true))
         local flavors={}
         for stage=1,4 do s.stage=stage; ui.render(); flavors[ui.hazardText:GetText()]=true end
         local flavorCount=0; for _ in pairs(flavors) do flavorCount=flavorCount+1 end; eq(flavorCount,4)
-        s.stage=1; p.hp=35; ui.render(); assert(ui.monsters[1].hurt:IsShown()); eq(ui.health:GetWidth(),188*0.35)
+        s.stage=1; ui.render(); p.hp=35; ui.render(); assert(ui.monsters[1].hurt:IsShown()); eq(ui.health:GetWidth(),188*0.35)
         assert(ui.team:GetText():find("2 KOs",1,true)); assert(ui.personal:GetText():find("YOUR FAME",1,true))
         assert(app.input:grab()); p.hp,p.ko=0,3; app.input:update(0.01); ui.render()
         assert(not app.input.focused and not app.input:action("P")); assert(not ui.controls[3]:IsEnabled())
         assert(ui.healthLabel:GetText():find("respawn in 3s",1,true)); assert(ui.monsters[1].badge:GetText():find("KO",1,true))
         p.hp,p.ko,p.invuln=100,0,2; ui.render(); assert(ui.controls[3]:IsEnabled()); assert(not app.input.focused)
         assert(ui.healthLabel:GetText():find("SHIELD 2s",1,true))
-        s.hazard.phase,s.hazard.remaining="impact",0.8; ui.render(); assert(ui.hazardText:GetText():find("IMPACT",1,true))
+        bossFixture(s,"attack",0.3,4,4,{1,3,7}); ui.render(); assert(ui.hazardText:GetText():find("IMPACT",1,true))
         for _=1,20 do ui.render() end; eq(p.hp,100) -- UI never inflicts damage.
-        s.hazard.phase,s.hazard.remaining="idle",4; ui.render(); assert(ui.hazardText:GetText():find("next warning in 4s",1,true))
+        bossFixture(s,"recover",4,4,4,{}); ui.render(); assert(ui.hazardText:GetText():find("BOSS RECOVERING",1,true))
         for _,mark in ipairs(ui.hazardLanes) do assert(not mark:IsShown()) end
         eq(#frames,framesBefore); eq(#textures,texturesBefore); eq(#fonts,fontsBefore)
         p.invuln,p.kos=0,0; s.hazard=nil
+    end)
+    check("WoW mock: boss actual ground center matches model while shielded and exposed", function()
+        local net=app.net; local old=net.state
+        local s=Addon.Model.new(); Addon.Model.addPlayer(s,1); Addon.Model.start(s); net.state=s
+        for _,remaining in ipairs({5,3.75,2.5,0}) do
+            bossFixture(s,"patrol",remaining,2,4,{},1); ui.render()
+            eq(ui.boss.drawLane,Addon.Model.bossPosition(s))
+            eq(ui.boss.drawCenterX,31+(Addon.Model.bossPosition(s)-1)*95)
+            eq(ui.boss.point[4]*ui.boss.artScale+24*ui.boss.artScale,ui.boss.drawCenterX)
+            eq(ui.boss.point[5]*ui.boss.artScale,32); eq(ui.boss.artScale,1.5)
+            assert(ui.boss.shield[1]:IsShown()); assert(ui.bossGround:IsShown())
+        end
+        for i=1,9 do s.hp[i]=0 end
+        bossFixture(s,"recover",5,5,5,{},2); ui.render()
+        eq(ui.boss.drawLane,5); eq(ui.boss.artScale,1.5); assert(not ui.boss.shield[1]:IsShown())
+        eq(ui.bossGround.point[4],ui.boss.drawCenterX-95); eq(ui.bossGround.strip:GetWidth(),190)
+        assert(ui.bossLabel:GetText():find("Hit near boss",1,true)); assert(not ui.bossLabel:GetText():find("3–5",1,true))
+        -- Owner rendering is exact even when the wall clock advances without a
+        -- model tick; it never uses the client's interpolation argument.
+        bossFixture(s,"patrol",4,2,4,{},3); ui.render(); local ownerX=ui.boss.drawLane
+        now=now+1; ui.render(); eq(ui.boss.drawLane,ownerX)
+        net.state=old; ui.resetBossVisuals()
+    end)
+    check("WoW mock: guest interpolation only known patrol, endpoint cap, pause and stale freeze", function()
+        local net=app.net
+        local oldState,oldMode,oldSeq,oldSnap=net.state,net.mode,net.inSeq,net.lastSnapshot
+        local s=Addon.Model.new(); Addon.Model.addPlayer(s,1); Addon.Model.start(s)
+        net.state,net.mode,net.inSeq,net.lastSnapshot=s,"client",10,now
+        bossFixture(s,"patrol",5,2,4,{},8); ui.resetBossVisuals(); ui.render()
+        eq(ui.boss.drawLane,Addon.Model.bossPosition(s))
+        now=now+1; ui.render(); eq(ui.boss.drawLane,Addon.Model.bossPosition(s,1))
+        local x=ui.boss.drawLane; s.paused=true; now=now+0.5; ui.render(); eq(ui.boss.drawLane,x)
+        assert(ui.hazardText:GetText():find("PAUSED",1,true))
+        s.paused=false; net.inSeq=11; net.lastSnapshot=now; ui.render()
+        now=now+2.4; ui.render(); x=ui.boss.drawLane
+        now=now+0.2; ui.render(); eq(ui.boss.drawLane,x); assert(ui.hazardText:GetText():find("STALE",1,true))
+        now=now+10; ui.render(); eq(ui.boss.drawLane,x)
+        net.inSeq=12; net.lastSnapshot=now; bossFixture(s,"patrol",0.2,2,4,{},8); ui.render()
+        now=now+1; ui.render(); eq(ui.boss.drawLane,4); eq(s.bossMotion.phase,"patrol"); eq(s.bossMotion.remaining,0.2)
+        net.inSeq=13; net.lastSnapshot=now; bossFixture(s,"windup",7,4,4,{2},8); ui.render()
+        local arm=ui.boss.armR.point[5]; now=now+1; ui.render()
+        eq(ui.boss.drawLane,4); eq(ui.boss.armR.point[5],arm); eq(s.bossMotion.remaining,7)
+        assert(ui.hazardText:GetText():find("IN 7s",1,true)); assert(ui.hazardText:GetText():find("last sample",1,true))
+        net.state,net.mode,net.inSeq,net.lastSnapshot=oldState,oldMode,oldSeq,oldSnap; ui.resetBossVisuals()
+    end)
+    check("WoW mock: four causal attack poses, locked cues, no damage or per-frame launch", function()
+        local net=app.net; local old=net.state
+        local s=Addon.Model.new(); Addon.Model.addPlayer(s,1); Addon.Model.start(s); net.state=s
+        s.players[1].invuln=0
+        ui.baseline=nil
+        for stage=1,4 do
+            s.stage=stage; bossFixture(s,"patrol",3,2,4,{},20+stage); ui.render()
+            local patrolArm=ui.boss.armR.point[5]
+            bossFixture(s,"windup",6,4,4,stage==4 and {2,4,6} or {3},20+stage); ui.render()
+            local windupArm=ui.boss.armR.point[5]; assert(windupArm~=patrolArm)
+            assert(ui.bossCues[1].parts[1]:IsShown()); assert(not ui.bossCues[1].parts[12]:IsShown())
+            eq(ui.bossCues[1].originX,31+3*95)
+            local marked=s.bossMotion.lanes[1]
+            if stage==3 then eq(ui.hazardLanes[marked].left:GetHeight(),35); assert(ui.hazardText:GetText():find("GROUND ONLY",1,true))
+            else eq(ui.hazardLanes[marked].left:GetHeight(),205); assert(ui.hazardText:GetText():find("ALL HEIGHTS",1,true)) end
+            local lanes=s.bossMotion.lanes
+            bossFixture(s,"attack",0.3,4,4,lanes,20+stage); ui.render()
+            assert(ui.boss.armR.point[5]~=windupArm); assert(ui.bossCues[1].parts[12]:IsShown())
+            local changes=ui.bossVisual.cueChanges; local hp=s.players[1].hp; local cursor=ui.particleCursor
+            local safe=0; for _,mark in ipairs(ui.hazardLanes) do if not mark:IsShown() then safe=safe+1 end end
+            assert(safe>=3)
+            for _=1,20 do now=now+0.03; ui.render() end
+            eq(ui.bossVisual.cueChanges,changes); eq(s.players[1].hp,hp); eq(s.bossMotion.remaining,0.3)
+            eq(ui.particleCursor,cursor)
+            bossFixture(s,"recover",5,4,4,{},20+stage); ui.render()
+            eq(ui.boss.armR.point[5],13); assert(not ui.bossCues[1].parts[1]:IsShown())
+        end
+        net.state=old; ui.resetBossVisuals()
+    end)
+    check("WoW mock: timely recovery confirms skipped impact with one harmless residue, never old launch", function()
+        local net=app.net
+        local oldState,oldMode,oldSeq,oldSnap=net.state,net.mode,net.inSeq,net.lastSnapshot
+        local s=Addon.Model.new(); Addon.Model.addPlayer(s,1); Addon.Model.start(s)
+        net.state,net.mode,net.inSeq,net.lastSnapshot=s,"client",30,now
+        bossFixture(s,"windup",0.8,5,5,{3},7); ui.resetBossVisuals(); ui.render()
+        local hp=s.players[1].hp; local cursor=ui.particleCursor
+        now=now+1.25; net.inSeq=31; net.lastSnapshot=now
+        bossFixture(s,"recover",4.8,5,5,{},7); ui.render()
+        assert(ui.bossVisual.confirmed); assert(ui.bossCues[1].parts[12]:IsShown())
+        eq(ui.bossCues[1].targetX,31+2*95); eq(ui.boss.pose,"recover")
+        assert(ui.hazardText:GetText():find("IMPACT CONFIRMED",1,true))
+        local untilTime=ui.bossVisual.confirmedUntil
+        for _=1,10 do now=now+0.03; ui.render() end
+        eq(ui.bossVisual.confirmedUntil,untilTime); eq(s.players[1].hp,hp); eq(ui.particleCursor,cursor)
+        now=now+0.4; ui.render(); assert(not ui.bossVisual.confirmed)
+        assert(not ui.bossCues[1].parts[12]:IsShown())
+        -- No cue for late joining recovery, a skipped/stale world, or a pause.
+        ui.resetBossVisuals(); ui.render(); assert(not ui.bossVisual.confirmed)
+        net.inSeq=32; net.lastSnapshot=now; bossFixture(s,"windup",1,5,5,{3},8); ui.render()
+        net.inSeq=34; net.lastSnapshot=now; bossFixture(s,"recover",4,5,5,{},8); ui.render(); assert(not ui.bossVisual.confirmed)
+        net.inSeq=35; net.lastSnapshot=now; bossFixture(s,"windup",1,5,5,{3},9); ui.render()
+        now=now+3; ui.render(); net.inSeq=36; net.lastSnapshot=now
+        bossFixture(s,"recover",4,5,5,{},9); ui.render(); assert(not ui.bossVisual.confirmed)
+        net.inSeq=37; net.lastSnapshot=now; bossFixture(s,"windup",1,5,5,{3},10); ui.render()
+        net.inSeq=38; net.lastSnapshot=now; bossFixture(s,"recover",4,5,5,{},10); s.paused=true; ui.render()
+        assert(not ui.bossVisual.confirmed); eq(s.players[1].hp,hp)
+        net.state,net.mode,net.inSeq,net.lastSnapshot=oldState,oldMode,oldSeq,oldSnap; ui.resetBossVisuals()
+    end)
+    check("WoW mock: snapshot gaps, epoch, replay and hidden resets cannot catch up old boss FX", function()
+        local net=app.net
+        local oldState,oldMode,oldSeq,oldSnap=net.state,net.mode,net.inSeq,net.lastSnapshot
+        local s=Addon.Model.new(); Addon.Model.addPlayer(s,1); Addon.Model.start(s)
+        s._epoch=3; s.time=40; net.state,net.mode,net.inSeq,net.lastSnapshot=s,"client",20,now
+        bossFixture(s,"attack",0.2,5,5,{1,3,6},41); ui.resetBossVisuals(); ui.baseline=nil; ui.render()
+        local cursor=ui.particleCursor; eq(ui.bossVisual.cueChanges,1)
+        net.inSeq=23; net.lastSnapshot=now; bossFixture(s,"recover",2,5,5,{},41); ui.render()
+        eq(ui.bossVisual.cueChanges,1); assert(not ui.bossCues[1].parts[1]:IsShown()); eq(ui.particleCursor,cursor)
+        net.inSeq=24; s._epoch=4; bossFixture(s,"patrol",5,2,3,{},1); ui.render()
+        eq(ui.bossVisual.cueChanges,1); eq(ui.boss.drawLane,2)
+        s.time=0; bossFixture(s,"windup",7,3,3,{4},1); ui.render(); eq(ui.bossVisual.cueChanges,1)
+        s.stage=2; bossFixture(s,"patrol",5,4,6,{},1); ui.render()
+        eq(ui.bossVisual.cueChanges,1); assert(not ui.bossCues[1].parts[1]:IsShown())
+        ui.root:Hide(); assert(not ui.bossVisual); ui.root:Show(); ui.render()
+        eq(ui.bossVisual.cueChanges,1); eq(ui.particleCursor,cursor)
+        net.state,net.mode,net.inSeq,net.lastSnapshot=oldState,oldMode,oldSeq,oldSnap; ui.resetBossVisuals()
     end)
     check("WoW mock: consistent hover / pressed / disabled / selected button treatment", function()
         local b=ui.capture; ui.render(); local normal=b.base.color[1]
@@ -338,12 +469,12 @@ function runWoWSmoke()
         SlashCmdList.RAMPAGE("leave"); ui.root:Hide()
         grouped = true; event("GROUP_ROSTER_UPDATE")
         assert(app.net.roster["Friend-OtherRealm"] and app.net.roster["Friend-TestRealm"])
-        event("CHAT_MSG_ADDON", "OtherPrefix", "R3|A|abc|l|1|0|c|0", "PARTY", "Friend-OtherRealm")
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R3|A|abc|l|1|0|c|0", "GUILD", "Friend-OtherRealm")
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R3|A|abc|l|1|0|c|0", "PARTY", "Stranger-Realm")
+        event("CHAT_MSG_ADDON", "OtherPrefix", "R4|A|abc|l|1|0|c|0", "PARTY", "Friend-OtherRealm")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R4|A|abc|l|1|0|c|0", "GUILD", "Friend-OtherRealm")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R4|A|abc|l|1|0|c|0", "PARTY", "Stranger-Realm")
         eq(#app.net:lobbyList(), 0)
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R3|A|abc|l|1|0|c|0", "PARTY", "Friend-OtherRealm")
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R3|A|def|l|1|0|c|0", "PARTY", "Friend")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R4|A|abc|l|1|0|c|0", "PARTY", "Friend-OtherRealm")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R4|A|def|l|1|0|c|0", "PARTY", "Friend")
         eq(#app.net:lobbyList(), 2); assert(not ui.root:IsShown())
     end)
     check("WoW mock: local hurt audio is opt-in, authoritative, rare and spectator-quiet", function()
@@ -363,7 +494,7 @@ function runWoWSmoke()
     end)
     check("WoW mock: visible-only discovery, explicit Join/Spectate and auto-fit", function()
         ui.root:Show(); step(4.1); eq(app.net.mode,"idle")
-        local queries=0; for _,m in ipairs(sent) do if m.payload=="R3|Q" then queries=queries+1 end end
+        local queries=0; for _,m in ipairs(sent) do if m.payload=="R4|Q" then queries=queries+1 end end
         assert(queries>=1 and queries<=2,"open discovery is bounded and does not autojoin")
         local join, chosenRole=app.net.join,nil
         app.net.join=function(_,name,sid,role) chosenRole=role; assert(name and sid); return true end
@@ -432,7 +563,7 @@ function runWoWSmoke()
     end)
     check("WoW mock: join stays explicit, group departure resets, help stays local", function()
         SlashCmdList.RAMPAGE("join Friend-OtherRealm"); eq(app.net.mode, "joining")
-        step(0.1); assert(string.find(sent[#sent].payload, "R3|J|abc|", 1, true))
+        step(0.1); assert(string.find(sent[#sent].payload, "R4|J|abc|", 1, true))
         grouped, raided = false, false; event("GROUP_ROSTER_UPDATE"); eq(app.net.mode, "idle")
         local publicBefore = #sent; SlashCmdList.RAMPAGE("help"); assert(#messages >= 3); eq(#sent, publicBefore)
         ui.root.scripts.OnDragStop(ui.root); assert(type(RampageDB.position) == "table")
@@ -503,10 +634,11 @@ function prepareWoWPreview(scene)
     SlashCmdList.RAMPAGE((scene=="brawl" or scene=="ko") and "solo brawl" or "solo")
     local app,ui=Addon.App,Addon.UI
     local s=app.net.state
-    s.stage=scene=="solo" and 3 or scene=="hazard" and 2 or 4; s.boss=8+s.stage*2
+    local motionScene=scene=="boss-patrol" or scene=="boss-windup" or scene=="boss-impact"
+    s.stage=scene=="solo" and 3 or scene=="hazard" and 2 or motionScene and 1 or 4; s.boss=8+s.stage*2
     local names={"Deehoc","Toast","Crumb","Sclap","Nick","Waffles","Marmalade","Burnt","Butter","Brioche","Jam","Rye","Bagel","Ciabatta","Sourdough","Muffin","Bun","Pretzel","Pita","Biscuit","Crouton","Pancake","Roll","Croissant","Dough"}
     local chaos=scene=="brawl" or scene=="hazard" or scene=="ko"
-    local count=scene=="solo" and 1 or chaos and 6 or 25
+    local count=scene=="solo" and 1 or (chaos or motionScene) and 6 or 25
     if chaos then for _=1,5 do app.net:addAI() end end
     for slot=1,count do
         if slot>1 and not s.players[slot] then Addon.Model.addPlayer(s,slot) end
@@ -516,17 +648,17 @@ function prepareWoWPreview(scene)
         if chaos then p.hp,p.kos=100-slot*9,s.mode=="brawl" and slot%3 or 0; if slot>1 then p.bot=true end end
         if slot%4==0 then p.y=0; p.x=1+slot%7 end
     end
-    app.net.slot=(scene=="solo" or chaos) and 1 or 12
+    app.net.slot=(scene=="solo" or chaos or motionScene) and 1 or 12
     if scene=="solo" then s.players[1].x,s.players[1].y,s.players[1].score=2,2,1150 end
-    if scene=="boss" or scene=="victory" then
+    if scene=="boss" or scene=="victory" or (motionScene and scene~="boss-patrol") then
         for i=1,9 do s.hp[i]=0 end
         s.boss=7
         for slot,p in pairs(s.players) do p.x=1+(slot-1)%7; p.y=0 end
     else s.hp[1],s.hp[5],s.hp[9]=0,1,1 end
     if scene=="spectator" then app.net.role,app.net.slot="spectate",nil end
     if chaos then
-        -- Match the real stage patterns: Permitron adjacent pair or Queuezilla sweep.
-        s.hazard={phase="warning",remaining=6,lanes=s.stage==2 and {3,4} or {2,3,4},id=3}
+        -- Match the real stage patterns: Permitron pair or simultaneous barrage.
+        bossFixture(s,"windup",6,4,4,s.stage==2 and {3,4} or {2,3,4},3)
         for slot,p in pairs(s.players) do p.x,p.y=slot,0 end
         s.players[1].invuln=0
     end
@@ -535,11 +667,22 @@ function prepareWoWPreview(scene)
     if scene=="victory" then s.phase="victory"; s.boss=0 else s.players[app.net.slot or 1].hit=1 end
     ui.render(); step(0.1)
     if scene~="spectator" and scene~="victory" then app.input:grab() end
+    if motionScene then
+        -- Real model position + real UI geometry, deterministic sample with no
+        -- transport simulation and no subsequent adapter ticks. Three different
+        -- ground positions make a static floating-boss regression obvious.
+        for slot,p in pairs(s.players) do p.x,p.y=slot,0; p.invuln=0 end
+        if scene=="boss-patrol" then bossFixture(s,"patrol",2.5,2,3,{},7)
+        elseif scene=="boss-windup" then bossFixture(s,"windup",5,4,4,{2},8)
+        else bossFixture(s,"attack",0.2,5,5,{3},9) end
+        ui.baseline=nil; ui.resetBossVisuals()
+    end
     if scene~="solo" and not chaos then
         -- Match raid presentation without pretending the preview fixture is a
         -- transport simulation. No network ticks execute after this fixture.
         app.net.mode,app.net.hostName,app.net.sid="client","Toast-ToastRealm","preview"
-        s._activeCount,s._spectators=count,15
+        app.net.inSeq,app.net.lastSnapshot=1,now
+        s._activeCount,s._spectators=count,motionScene and 0 or 15
         app.net.status=scene=="spectator" and "Spectating: no avatar, score or gameplay input." or "Joined as player! Shared city, personal score."
     end
     ui.render()

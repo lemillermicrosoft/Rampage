@@ -148,19 +148,19 @@ end)
 check("model: all four bosses repeatedly telegraph real lane damage before and after shield drops", function()
     local patterns = {}
     for stage = 1, 4 do
-        local s = active(); s.stage = stage; s.hazard = nil; M.tick(s, 0.1)
+        local s = active(); s.stage, s.phase, s.wait = stage-1, "clear", 0.1; M.tick(s, 0.1); M.tick(s, 5)
         local h, p = s.hazard, s.players[1]
-        eq(h.phase, "warning"); assert(h.remaining >= 6.8)
+        eq(h.phase, "warning"); assert(h.remaining >= 6.999)
         patterns[stage] = table.concat(h.lanes, ",")
         p.x, p.invuln = h.lanes[1], 0
         M.tick(s, 3); M.tick(s, 3); eq(p.hp, 100); eq(h.phase, "warning")
         M.tick(s, 1); eq(h.phase, "impact"); eq(p.hp, 65)
         assert(p.x ~= h.lanes[1] or p.x == 1 or p.x == 7)
-        M.tick(s, 0.5); eq(h.phase, "idle"); M.tick(s, 3); eq(s.hazard.phase, "warning")
+        M.tick(s, 0.5); eq(h.phase, "idle"); M.tick(s, 5); eq(s.bossMotion.phase, "patrol"); M.tick(s, 5); eq(s.hazard.phase, "warning")
         local id = s.hazard.id; for i = 1, 9 do s.hp[i] = 0 end
         p.x, p.invuln = s.hazard.lanes[1], 0
         M.tick(s, 5); M.tick(s, 2); eq(p.hp, 30)
-        M.tick(s, 3.5); assert(s.hazard.id > id)
+        M.tick(s, 0.5); M.tick(s, 5); assert(s.hazard.id > id)
     end
     assert(patterns[1] ~= patterns[2] and patterns[2] ~= patterns[3] and patterns[3] ~= patterns[4])
 end)
@@ -168,9 +168,10 @@ check("model: stationary bot can be hurt and KO'd; deterministic AI alone clears
     local s = M.new(); M.addPlayer(s, 1, 1); M.start(s)
     local p = s.players[1]; p.invuln, p.nextBot = 0, 99999
     for _ = 1, 3 do
+        M.tick(s, 5); eq(s.hazard.phase, "warning")
         p.x = s.hazard.lanes[1]; p.invuln = 0
         M.tick(s, 5); M.tick(s, 2)
-        if p.ko == 0 then M.tick(s, 3.5) end
+        if p.ko == 0 then M.tick(s, 0.5); M.tick(s, 5) end
     end
     eq(p.hp, 0); assert(p.ko > 0)
     local function run()
@@ -182,11 +183,134 @@ check("model: stationary bot can be hurt and KO'd; deterministic AI alone clears
     local t = run(); eq(run(), t); print(string.format("  Solo deterministic AI clears four bosses in %.1f game seconds", t))
 end)
 check("model: warning is dodgable and host pause freezes hazard, HP, respawn and game clock", function()
-    local s = active(); local p = s.players[1]
+    local s = active(); local p = s.players[1]; M.tick(s, 5)
     p.invuln, p.x = 0, s.hazard.lanes[1]
     M.tick(s, 3); M.tick(s, 3); assert(M.act(s, 1, "R"))
     M.tick(s, 1); eq(p.hp, 100)
     local time, remaining = s.time, s.hazard.remaining
     s.paused = true; M.tick(s, 5); eq(s.time, time); eq(s.hazard.remaining, remaining)
     assert(not M.damage(s, 1, 35))
+end)
+local function close(a, b) assert(math.abs(a-b) < 0.000001, tostring(a).." != "..tostring(b)) end
+local function atStage(stage)
+    local s = active(); s.stage, s.phase, s.wait = stage-1, "clear", 0.1; M.tick(s, 0.1); return s
+end
+check("model: actual fractional patrols stay in lanes 2..6, reflect and never exceed two lanes per five seconds", function()
+    for stage = 1, 4 do
+        local s = atStage(stage)
+        for cycle = 1, 12 do
+            local b, before = s.bossMotion, M.bossPosition(s)
+            eq(b.phase, "patrol"); eq(b.id, cycle); eq(#b.lanes, 0)
+            local distance = math.abs(b.toLane-b.fromLane)
+            assert(distance <= 2); assert(b.toLane >= 2 and b.toLane <= 6)
+            if stage ~= 3 then eq(distance, stage == 2 and 2 or (stage == 4 and (cycle%2==0 and 2 or 1) or 1)) end
+            close(M.bossPosition(s, 999), b.toLane)
+            M.tick(s, 2.5); close(M.bossPosition(s), (b.fromLane+b.toLane)/2)
+            assert(math.abs(M.bossPosition(s)-before) <= 1)
+            M.tick(s, 2.5); eq(s.bossMotion.phase, "windup"); close(M.bossPosition(s), b.toLane)
+            M.tick(s, 5); M.tick(s, 2); M.tick(s, 0.5); M.tick(s, 5)
+        end
+    end
+end)
+check("model: true fractional hitbox replaces fixed 3..5 reach and city shielding remains authoritative", function()
+    local s = atStage(2); local p = s.players[1]
+    M.tick(s, 2.5); close(M.bossPosition(s), 5)
+    p.x = 6; assert(M.bossInReach(s, p)); act(s, 1, "P"); eq(s.boss, 12) -- shield
+    for i = 1, 9 do s.hp[i] = 0 end
+    p.x = 3; assert(not M.bossInReach(s, p)); act(s, 1, "P"); eq(s.boss, 12)
+    p.x = 6; act(s, 1, "P"); eq(s.boss, 11) -- old hitbox would miss
+    M.tick(s, 0.1); close(M.bossPosition(s), 5.04)
+    p.x = 4; assert(not M.bossInReach(s, p)); act(s, 1, "P"); eq(s.boss, 11)
+    p.x, p.y = 6, 1; act(s, 1, "P"); eq(s.boss, 11)
+    p.y = 0; act(s, 1, "P"); eq(s.boss, 10)
+end)
+check("model: warnings lock origin and lanes, impacts occur once, and stationary recovery offers five seconds", function()
+    for stage = 1, 4 do
+        local s = atStage(stage); local p = s.players[1]
+        M.tick(s, 5); local b = s.bossMotion
+        local origin, lanes = M.bossPosition(s), table.concat(b.lanes, ",")
+        eq(b.fromLane, b.toLane); assert(#b.lanes <= 4)
+        p.x = 7; M.tick(s, 3); eq(table.concat(b.lanes, ","), lanes); close(M.bossPosition(s, 999), origin)
+        p.x, p.invuln = b.lanes[1], 0; M.tick(s, 3.9); eq(p.hp, 100)
+        M.tick(s, 0.1); eq(b.phase, "attack"); eq(p.hp, 65)
+        p.x, p.invuln = b.lanes[1], 0; M.tick(s, 0.4); eq(p.hp, 65); eq(table.concat(b.lanes, ","), lanes)
+        M.tick(s, 0.1); eq(b.phase, "recover"); close(b.remaining, 5); eq(#b.lanes, 0)
+        M.tick(s, 4.9); eq(b.phase, "recover"); close(M.bossPosition(s), origin); eq(p.hp, 65)
+        M.tick(s, 0.1); eq(s.bossMotion.phase, "patrol"); close(M.bossPosition(s), origin)
+    end
+end)
+check("model: ranged columns hit every height; Snack Tax stomp is ground-only; knockback uses the locked boss origin", function()
+    for stage = 1, 4 do
+        local s = atStage(stage); M.addPlayer(s, 2)
+        local p, q = s.players[1], s.players[2]
+        p.x, q.x, q.y = 2, 2, 2; M.tick(s, 5)
+        local b = s.bossMotion
+        assert(b.lanes[1] == 2 or b.lanes[2] == 2)
+        p.invuln, q.invuln = 0, 0
+        M.tick(s, 5); M.tick(s, 2)
+        eq(p.hp, 65); eq(p.x, 1)
+        eq(q.hp, stage == 3 and 100 or 65); eq(q.y, stage == 3 and 2 or 1)
+        eq(M.bossAttackKind(s), stage == 3 and "ground" or "ranged")
+    end
+    local s = atStage(2); local p = s.players[1]
+    p.x = 5; M.tick(s, 5); eq(M.bossPosition(s), 6)
+    p.invuln = 0; M.tick(s, 5); M.tick(s, 2); eq(p.x, 4) -- NOT away from old lane 4
+    s = active(); p = s.players[1]; p.x, p.invuln = 4, 0
+    M.tick(s, 2); eq(p.hp, 100) -- no new body-collision damage
+end)
+check("model: pursuit uses nearest eligible actor, deterministic slot ties and one-lane stride", function()
+    local s = active(); M.addPlayer(s, 2); M.addPlayer(s, 3)
+    -- Set up a real recovery transition: protected/KO actors cannot lure the boss.
+    s.stage = 3; s.hazardID = 1
+    s.bossMotion = {id=1,phase="recover",remaining=0.1,fromLane=4,toLane=4,lanes={}}
+    s.players[1].x, s.players[2].x, s.players[3].x = 3, 5, 4
+    s.players[3].protected = true; M.tick(s, 0.1); eq(s.bossMotion.toLane, 3)
+    s.players[1].ko, s.players[1].hp, s.players[1].protected = 4, 0, true
+    s.bossMotion = {id=1,phase="recover",remaining=0.1,fromLane=4,toLane=4,lanes={}}
+    M.tick(s, 0.1); eq(s.bossMotion.toLane, 5)
+end)
+check("model: every boss phase freezes on pause and known-segment smoothing never advances a phase", function()
+    local s = active(); local p = s.players[1]
+    for _, phase in ipairs({"patrol", "windup", "attack", "recover"}) do
+        eq(s.bossMotion.phase, phase)
+        p.ko, p.hp, p.invuln = 2, 0, 0
+        local b, time, position, remaining = s.bossMotion, s.time, M.bossPosition(s), s.bossMotion.remaining
+        s.paused = true; M.tick(s, 5)
+        eq(s.time, time); eq(b.remaining, remaining); close(M.bossPosition(s, 99), position)
+        eq(p.ko, 2); eq(p.hp, 0); eq(s.hazard.remaining, remaining)
+        s.paused = false; p.ko, p.hp, p.invuln = 0, 100, 30
+        if phase == "patrol" then close(M.bossPosition(s, 99), b.toLane); eq(b.phase, "patrol") end
+        if phase == "windup" then M.tick(s, 5); M.tick(s, 2) else M.tick(s, remaining) end
+    end
+end)
+check("model: motion tick partition is deterministic, stage/replay reset all motion and AI chases the actual boss", function()
+    local a, b = atStage(4), atStage(4)
+    for _ = 1, 1400 do M.tick(a, 0.1); M.tick(b, 0.03); M.tick(b, 0.07) end
+    eq(a.bossMotion.phase, b.bossMotion.phase); eq(a.bossMotion.id, b.bossMotion.id)
+    close(a.bossMotion.remaining, b.bossMotion.remaining); close(M.bossPosition(a), M.bossPosition(b))
+    a.phase, a.wait, a.stage = "clear", 0.1, 1; M.tick(a, 0.1)
+    eq(a.stage, 2); eq(a.bossMotion.id, 1); eq(a.bossMotion.phase, "patrol"); close(M.bossPosition(a), 4)
+    a.phase = "victory"; assert(M.start(a)); eq(a.stage, 1); eq(a.bossMotion.id, 1); eq(a.bossMotion.toLane, 5)
+    M.addPlayer(a, 2, 1); local p = a.players[2]
+    for i = 1, 9 do a.hp[i] = 0 end
+    a.bossMotion = {id=2,phase="recover",remaining=5,fromLane=6,toLane=6,lanes={}}; M.syncHazard(a)
+    p.x = 3; eq(M.botAction(a, 2), "R"); p.x = 6; eq(M.botAction(a, 2), "P")
+    a.bossMotion.fromLane, a.bossMotion.toLane = 2, 2; p.x = 5; eq(M.botAction(a, 2), "L")
+end)
+check("model: five deterministic AI complete all four moving bosses in Co-op and Brawl without stalls", function()
+    for _, mode in ipairs({"coop", "brawl"}) do
+        local s=M.new(mode)
+        for i=1,5 do assert(M.addPlayer(s,i,i)) end
+        assert(M.start(s))
+        local moved = {}
+        for _=1,6000 do
+            if s.phase=="victory" then break end
+            local b=s.bossMotion
+            if b and b.phase=="patrol" and M.bossPosition(s)~=b.fromLane then moved[s.stage]=true end
+            M.tick(s,0.1)
+        end
+        eq(s.phase,"victory"); eq(s.stage,4); eq(M.total(s),2380)
+        for stage=1,4 do assert(moved[stage],"AI skipped moving stage "..stage) end
+        print(string.format("  Five AI %s clear four moving bosses in %.1f game seconds",mode,s.time))
+    end
 end)

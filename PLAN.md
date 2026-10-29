@@ -1,26 +1,33 @@
-# Rampage — chaos iteration plan
+# Rampage — roaming-boss iteration
 
-## Vision
-Keep the friendly city-smashing raid-break game, but give monsters something to react to: helpful computer teammates, optional mutual Brawl, health/quick respawns and bosses with readable attacks. Co-op remains the default. All damage stays inside the addon minigame.
+## User request
+After v0.3.0's AI/Brawl improvement, make bosses visibly **move and attack**. Keep unique/different levels as later backlog. Do not mix the next candidate into the household's released install.
 
-## Bounded scope delivered
-- Host/solo Add AI / Remove AI, one at a time, at most five in the 25-actor cap. Deterministic local logic; no LLM, physical roster impersonation or real WoW actions. Humans take priority over filler AI.
-- Optional advertised Co-op / Brawl mode with explicit Join Brawl consent. Owner changes only before Start or replay and with no real guests joined; never silently convert a running/joined game into PvP.
-- 100HP, bounded same-height/adjacent Brawl punches, separate KO credit, four-second KO, three-second respawn shield, visible health/hurt/KO/immunity cues.
-- Four repeated boss lane patterns, seven-second warning, single damage impact and recovery. Boss attacks before/after shield removal; legal dodging and forgiving damage.
-- R3 snapshots carry bots/HP/clock/mode/hazards atomically within bounded packets, queues and the existing per-sender budget. Guest combat protection via authenticated notification and read-only physical-roster fallback, reconciled before simulation.
-- Consistent button interaction states, host AI controls, font-safe ASCII fallback controls and truthful visible-window key status. Existing capture/escape/chat/combat/audio safeguards retained.
+## Isolation / release boundary
+- Worktree: `C:\Users\leroy\repos\Rampage-boss-motion`, feature branch for issue #7, based on `7c27d1b` / v0.3.0.
+- Primary checkout remains clean released main; actual anniversary AddOns junction still targets `C:\Users\leroy\repos\Rampage`.
+- Candidate is not installed. No forced reload, junction swap, SavedVariables edits, release/config/workflow/tooling changes or external audio/art.
+- New PR + unique ZIP only. No merge/tag/GitHub/CurseForge publication without fresh approval. TOC remains0.3.0 but R4 is incompatible with released v0.3.0/R3; all testers must use the same head-labelled candidate.
+
+## Implemented playable scope
+- Shared pure boss position for movement, hit checks, AI pursuit and rendering. Ground patrol stays in lanes2–6 at ≤2 lanes per5s; no old fixed3–5 hitbox or body-contact damage.
+- Cycle: **5s patrol →7s locked windup →0.5s once-only attack →5s stationary recovery**. At least four safe lanes; origin and targets stop moving before warning starts.
+- Crumb Baron stroll/throw; Permitron march/beam; Snack Tax nearest-actor pursuit/ground-only stomp; Queuezilla alternating strides/simultaneous three-column barrage.
+- Moving shield, ground reach bracket, phase-specific limbs and48 fixed boss-cue textures connect actual origin/targets. Clients only smooth the known patrol segment and freeze on pause/staleness. No client damage or future-phase prediction.
+- If a timely consecutive world skips the short attack pose but confirms recovery of the same warned cycle, display a short static confirmed-impact residue, never a delayed projectile or catch-up damage. Late joins/gaps/stale/pause do not trigger it.
+- Existing default Co-op, opt-in Brawl consent, health/KO/respawn, five-AI/25-actor/40-real-participant caps and pre-tick guest combat protection retained.
+- Shipped control-persistence fix unchanged: selected keyboard/mouse survives ordinary level transitions, held inputs do not replay, explicit/safety releases never auto-recapture.
 
 ## Verification
-- [x] Deterministic gameplay tests including AI-only four-boss completion and AI being hurt/KO'd.
-- [x] Consent, authority, spectator safety, cooldown/range/KO/respawn, host pause, guest protection and stale/lost/reordered protocol tests.
-- [x] Forty-node finite-budget simulation with 20 human actors +5AI +20spectators through four bosses/replay; maximum-name join/reconnect and warning-blackout fixtures.
-- [x] Integrated real TOC mocked UI/input/audio tests; fixed pools and actual geometry preview export/inspection.
-- [ ] Real native AI/Brawl/hazard visual playtest, keyboard/focus/taint and audio.
-- [ ] Real two-client response/play balance, then larger raid transport behavior.
+- [x] Deterministic bounded movement, exact hit/miss/shield behavior, locked attack timing, stationary recovery, ground/ranged damage, pause and reset.
+- [x] AI chase and solo/five-AI four-boss completion in Co-op/Brawl.
+- [x] R4 strict compact-world round trips, late join, malformed/stale/reordered/lost worlds, no client impact replay.
+- [x] Actual40-node maximum-name/mixed-AI simulations within existing700 chargedB/s and8msg/s limits; no higher bandwidth allowance.
+- [x] Actual TOC/input/UI/audio regression suite; fixed object pools and source-derived patrol/windup/impact previews.
+- [ ] New native WoW graphics, focus/taint, two-client response, audio and large live raid checks.
 
-## Known tradeoffs
-Worlds still arrive every 1.25s, not at animation speed; R3 requires three fragments and a slower name carousel. Seven-second warnings exceed the tested4s worst world gap, but arbitrary loss can still hide a warning. Brawl is forgiving, noncompetitive chaos, not precision network fighting. Simple AI pathing/scuffle/dodge behavior is intentionally bounded; no complex boss phases, host migration or progression expansion.
+## Deliberate limits
+Full worlds still every1.25s. Seven-second windup exceeds the measured4s gap but arbitrary loss can hide warnings. Clients may miss the0.5s attack pose; confirmed aftermath is presentation-only. Known-segment animation is not network precision. No host migration, malicious-host anti-cheat, map overhaul, new combat progression or contact physics.
 
-## Delivery and release boundary
-The owner explicitly authorized publishing reviewed AI/Brawl candidate ac5bef3 on October 29, 2026 at10:34. Publish PR #6 through the existing default release pipeline, assign a new matching runtime/TOC version and verify GitHub/CurseForge outcomes and ZIP hashes. Every machine must upgrade from old R2/v0.2.0 to the same R3 release. Preserve original tags/archives and leave the main checkout on the new release for the owner's and wife's compatibility. No forced reload, junction swap or SavedVariables edits. Roaming/more visibly attacking bosses are a separate next iteration; unique levels are later backlog. Neither is included or automatically authorized for publishing here.
+## Later backlog — not this PR
+Distinct level silhouettes, tower arrangements, palettes and boss-specific scenery after the moving-boss playtest. New level work receives separate scope/approval; it is not silently bundled here.
