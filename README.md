@@ -2,15 +2,17 @@
 
 **<Toast>'s pocket raid-break arcade.** Original monsters climb and smash a shared city, then flatten four fictional bosses. For **TBC Classic 2.5.6 / Interface 20506**. Inspired by classic climb-and-smash play, with original art and no affiliation with the original Rampage game's owners.
 
-## Chaos playtest — AI, Brawl and bosses that fight back
+## Chaos release — AI, Brawl and bosses that fight back
 
-This **unreleased feature candidate** extends published v0.2.0 with deterministic computer monsters, optional PvP Brawl, health/knockouts, active boss threats and clearer controls ([issue #5](https://github.com/lemillermicrosoft/Rampage/issues/5)). **Default remains PvE Co-op:** teammates cannot hurt each other, but bosses can. **Brawl is optional:** monsters can also punch one another.
+This release extends v0.2.0 with deterministic computer monsters, optional PvP Brawl, health/knockouts, active boss threats and clearer controls ([issue #5](https://github.com/lemillermicrosoft/Rampage/issues/5)). **Default remains PvE Co-op:** teammates cannot hurt each other, but bosses can. **Brawl is optional:** monsters can also punch one another. The owner explicitly authorized publishing the reviewed AI/Brawl build on October 29, 2026 after positive in-game feedback.
 
-The published v0.2.0 release/tag/archives are preserved. This candidate keeps the TOC version at 0.2.0 until a separately authorized release, but changes the wire protocol to **R3**. **Do not mix this candidate with the published R2 build.** Every participant needs the same head-labelled candidate ZIP. This feature request does not authorize another merge/release/CurseForge upload.
+**Every participant must upgrade to this same new release.** It uses **R3**, incompatible with v0.2.0's R2. The release pipeline assigns a new matching TOC/runtime version; use the versioned ZIP from [GitHub releases](https://github.com/lemillermicrosoft/Rampage/releases) or [CurseForge](https://www.curseforge.com/wow/addons/rampage-four-more-bosses), not the older candidate ZIP. CurseForge upload acceptance and public approval are separate. Old release/tag/archives remain preserved.
+
+Bosses already deal telegraphed lane damage, but their display remains stationary apart from presentation animation. **Roaming bosses and more varied levels are future work, not included or automatically approved for publication in this release.**
 
 ## Try the new fun in one minute
 
-1. Install the candidate `Rampage` folder inside `Interface/AddOns`; safely `/reload` when you choose. Do not nest the folder twice.
+1. Install the same versioned release on both machines: place its `Rampage` folder inside `Interface/AddOns`, then safely `/reload` when you choose. Do not nest the folder twice. The owner's linked checkout remains on the release; no forced reload or junction change is performed.
 2. Type **`/rampage solo`** for default Co-op. Click **+ ADD AI** to add one helper. Click **PLAY • GRAB KEYS** and use **WASD/arrows + Space**. **Escape releases keys**.
 3. For friendly fighting, **Leave**, select **BRAWL**, then **Solo practice**, or use **`/rampage solo brawl`**. Add one AI and punch it from the same height within one lane. AI can hit you back, but still works on the city.
 4. **Dodge marked boss lanes.** Warnings last seven authoritative game seconds before impact. Descend if necessary and move out of the marked columns; every height in a marked lane is threatened.

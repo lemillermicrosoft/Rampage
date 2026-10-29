@@ -1,10 +1,10 @@
-# QA — chaos / AI / opt-in Brawl candidate
+# QA — chaos / AI / opt-in Brawl release
 
 ## Evidence boundary and release gate
 
 The owner supplied an actual WoW screenshot of the **published v0.2.0 UI in solo play**. It shows original graphics working, missing arrow glyphs and a stale visible “Window hidden” label. The red “You have no target” message was **not attributed to Rampage** without evidence. The screenshot does not prove this new AI/HP/Brawl/boss iteration, native keyboard routing or live raid networking.
 
-This is a **new unreleased feature** from `eec631c` / v0.2.0, issue #5. No merge/tag/GitHub/CurseForge release is authorized by the new feature request. Existing release and candidates are preserved. TOC version remains 0.2.0 while candidate wire is **R3**; install the same head-labelled ZIP on every client, not the published R2 build.
+The owner explicitly authorized publishing the reviewed `ac5bef3` AI/Brawl build on October 29, 2026 at 10:34 after positive in-game feedback. This lifts the prior feature-only publication gate, but is not native two-client/raid/input certification. Independent QA passed 55 tests, 9 grammar checks, zero audit findings, four supplemental probes and all13 candidate entry hashes. The release pipeline assigns a new matching TOC/runtime version. **Both machines/all participants must use the same new versioned R3 release**, not published v0.2.0/R2 or the earlier candidate archive. Existing release and candidates are preserved; roaming bosses/new level designs are not included in this release.
 
 Headless execution: Node v24.18.0, Fengari0.1.5 (**Lua5.3 semantics**); separate luaparse0.3.1 **Lua5.1 grammar**. No native Lua5.1 VM, actual new client rendering/input/taint/audio or real 25-/40-client transport proof is claimed.
 
@@ -95,4 +95,4 @@ Use identical R3 ZIPs and voluntarily reload only in a safe area.
 
 ## Handoff
 
-New tested PR/candidate only, not a release. Preserve v0.2.0 and prior ZIPs. Report actual tests/head/artifact hashes and these limitations; publication needs new explicit owner approval.
+Publish the currently approved AI/Brawl runtime through the existing pipeline and preserve v0.2.0/prior candidates. Verify exact bumped-runtime tests, portable archive hashes, GitHub asset and CurseForge upload receipt separately from public approval. Leave the main checkout on the new release for two-machine compatibility. No moving-boss implementation, forced client reload, junction swap or external SavedVariables changes in this publication task.
