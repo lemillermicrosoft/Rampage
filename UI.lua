@@ -1,11 +1,13 @@
 -- Original Toast arcade art: every silhouette, prop and particle is authored here.
--- Fixed pools: 25 creatures, 25 crew chips, 7 hazard lanes, 9 floors and 72 FX.
+-- Fixed pools: 25 creatures, 25 crew chips, 7 hazard lanes, 9 floors,
+-- 72 particles and 4 x 12 boss-cue textures. No presentation code deals damage.
 local _, addon = ...
 local UI = { WIDTH = 900, HEIGHT = 660, MAX = 25 }
 addon.UI = UI
 local palette = { {0.37,0.88,0.61}, {1,0.61,0.32}, {0.58,0.69,1}, {1,0.49,0.66}, {0.91,0.79,0.38} }
 local bossPalette = { {0.92,0.60,0.25}, {0.56,0.73,0.79}, {0.87,0.35,0.49}, {0.65,0.48,0.85} }
-local hazardFlavor = { "CRUMB RAIN", "PERMIT BEAM", "SNACK TAX", "QUEUED SWEEP" }
+local hazardFlavor = { "CRUMB THROW", "PERMIT BEAM", "GROUND STOMP", "THREE-COLUMN BARRAGE" }
+local function laneX(lane) return 31+(lane-1)*95 end
 local function rect(parent, x, y, w, h, r, g, b, a, layer)
     local t = parent:CreateTexture(nil, layer or "ARTWORK")
     t:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", x, y); t:SetSize(w, h)
@@ -252,7 +254,19 @@ function UI.create(app)
         for j=1,8 do rect(rubble,(j-1)*11,(j%3)*3,15,6+(j%3)*4,0.51,0.37,0.30) end
         UI.rubble[tower]=rubble
     end
-    UI.boss=creature(city,2,true); UI.boss:SetScale(1.5); UI.boss.badge:SetText("BOSS")
+    -- Same ground footprint and scale while shielded or exposed. Foreground to
+    -- buildings, behind players; the crown no longer floats above a fixed tower.
+    UI.boss=creature(city,2,true); UI.boss.artScale=1.5; UI.boss:SetScale(1.5); UI.boss.badge:SetText("BOSS")
+    UI.boss:SetFrameLevel(city:GetFrameLevel()+6)
+    UI.boss.shield={rect(UI.boss,-5,2,2,65,0.65,0.86,1,0.85),rect(UI.boss,51,2,2,65,0.65,0.86,1,0.85),
+        rect(UI.boss,-5,67,58,2,0.65,0.86,1,0.85)}
+    UI.bossGround=CreateFrame("Frame",nil,city); UI.bossGround:SetSize(190,25)
+    UI.bossGround:SetFrameLevel(city:GetFrameLevel()+6)
+    UI.bossGround.strip=rect(UI.bossGround,0,10,190,2,1,0.84,0.4,0.7)
+    UI.bossGround.left=rect(UI.bossGround,0,7,2,8,1,0.84,0.4)
+    UI.bossGround.right=rect(UI.bossGround,188,7,2,8,1,0.84,0.4)
+    UI.bossGround.center=rect(UI.bossGround,91,9,8,5,1,0.84,0.4)
+    UI.bossGround.label=text(UI.bossGround,9,0,-18,190,"CENTER")
     UI.boss.crown=rect(UI.boss,14,59,22,5,1,0.80,0.37)
     for i=1,3 do rect(UI.boss,12+i*6,64,4,6+i%2*3,1,0.80,0.37) end
     UI.monsters={}
@@ -267,6 +281,14 @@ function UI.create(app)
     UI.fx=CreateFrame("Frame",nil,city); UI.fx:SetSize(632,354); UI.fx:SetPoint("BOTTOMLEFT",city,"BOTTOMLEFT",0,0)
     UI.fx:SetFrameLevel(city:GetFrameLevel()+14); UI.particles={}; UI.particleCursor=0
     for i=1,72 do local t=rect(UI.fx,0,0,5,5,1,0.7,0.4); t:Hide(); UI.particles[i]={texture=t} end
+    -- Four targets is the hard ceiling (at least three of seven lanes safe).
+    -- Dotted beams/arcs and flat stomp rings use the same fixed texture pool.
+    UI.bossCues={}
+    for i=1,4 do
+        local cue={parts={}}
+        for j=1,12 do local t=rect(UI.fx,0,0,5,5,1,0.75,0.4); t:Hide(); cue.parts[j]=t end
+        UI.bossCues[i]=cue
+    end
     UI.banner=CreateFrame("Frame",nil,city); UI.banner:SetSize(430,66); UI.banner:SetPoint("BOTTOMLEFT",city,"BOTTOMLEFT",101,145)
     UI.banner:SetFrameLevel(city:GetFrameLevel()+20); rect(UI.banner,0,0,430,66,0.12,0.075,0.12,0.94)
     rect(UI.banner,0,64,430,2,1,0.66,0.30); UI.banner.title=text(UI.banner,23,8,-10,414,"CENTER")
@@ -315,8 +337,8 @@ function UI.create(app)
     UI.hint=text(root,12,21,-585,858)
     UI.status=text(root,10,21,-622,858)
     app.input=addon.Input.create(app,root)
-    root:SetScript("OnHide",function() app.input:release("Window hidden — keys released"); UI.baseline=nil; if GameTooltip then GameTooltip:Hide() end end)
-    root:SetScript("OnShow",function() UI.fit(); UI.nextDiscovery=0; UI.baseline=nil; app.input:shown() end)
+    root:SetScript("OnHide",function() app.input:release("Window hidden — keys released"); UI.baseline=nil; UI.resetBossVisuals(); UI.clearParticles(); if GameTooltip then GameTooltip:Hide() end end)
+    root:SetScript("OnShow",function() UI.fit(); UI.nextDiscovery=0; UI.baseline=nil; UI.resetBossVisuals(); UI.clearParticles(); app.input:shown() end)
     UI.fit(); root:Hide(); return root
 end
 function UI.burst(x,y,count,style)
@@ -342,10 +364,168 @@ function UI.effects(now)
         end
     end
 end
+function UI.resetBossVisuals()
+    UI.bossVisual=nil
+    for _,cue in ipairs(UI.bossCues or {}) do
+        cue.lane=nil
+        for _,part in ipairs(cue.parts) do part:Hide() end
+    end
+end
+function UI.clearParticles()
+    for _,p in ipairs(UI.particles or {}) do p.start=nil; p.texture:Hide() end
+end
+-- Only interpolate the current, already-authorized patrol segment. Warning,
+-- impact and recovery clocks are always the received sample, never local timers.
+-- After two nominal snapshots without news, hold rather than invent a new route.
+function UI.bossSample(s,net,now)
+    local motion=s and s.bossMotion
+    if not motion or s.phase~="play" then UI.resetBossVisuals(); return nil end
+    local client=net.mode=="client"
+    local seq=net.inSeq or 0
+    local epoch=s._epoch or net.inputEpoch or 0
+    local v=UI.bossVisual
+    local reset=not v or v.sid~=net.sid or v.host~=net.hostName or v.mode~=net.mode or v.stage~=s.stage
+        or v.epoch~=epoch or seq<(v.seq or 0) or (s.time or 0)<(v.clock or 0)
+        or motion.id<(v.id or 0)
+        or (client and seq>(v.seq or 0)+1)
+    if reset then
+        UI.resetBossVisuals()
+        UI.baseline=nil; UI.clearParticles()
+        v={sid=net.sid,host=net.hostName,mode=net.mode,stage=s.stage,epoch=epoch}
+        UI.bossVisual=v
+    end
+    local fresh=reset or v.state~=s or v.seq~=seq
+    local cap=2*(addon.Protocol.SNAPSHOT_INTERVAL or 1.25)
+    -- Measure the PREVIOUS sample before replacing its timestamp. Rendering can
+    -- stall without ever setting v.stale; delivery alone must not make that gap timely.
+    local priorAge=math.max(0,now-(v.sampleAt or now))
+    local wasStale=v.stale or (client and priorAge>cap)
+    if fresh then
+        v.sampleAt=net.lastSnapshot or now
+        v.elapsed=0; v.frozen=false
+    end
+    local age=math.max(0,now-(v.sampleAt or now))
+    local stale=client and age>cap
+    if not client then v.elapsed=0
+    elseif s.paused or net.combat then v.frozen=true
+    elseif not v.frozen and not stale then v.elapsed=math.min(age,cap,math.max(0,motion.remaining or 0))
+    elseif stale then v.frozen=true end
+    local elapsed=client and motion.phase=="patrol" and (v.elapsed or 0) or 0
+    -- If pause/staleness arrives without a new sample, freeze the already drawn
+    -- point; the model correctly refuses elapsed while paused, so do not rewind.
+    if not (client and v.frozen and not fresh and v.position) then
+        v.position=addon.Model.bossPosition(s,elapsed)
+    end
+    v.state,v.seq,v.clock,v.stale=s,seq,s.time or 0,stale
+    -- A 0.5s attack can fall between 1.25s worlds. A consecutive, timely
+    -- windup->recover sample CONFIRMS impact; show a short static aftermath at
+    -- the already locked targets, never predict/replay a launch or apply damage.
+    local confirmed=client and fresh and not reset and not wasStale and not stale
+        and not s.paused and not net.combat and v.id==motion.id and v.phase=="windup"
+        and motion.phase=="recover" and (motion.remaining or 0)>=3
+    if confirmed then
+        v.confirmedUntil=now+0.65; v.confirmedLanes={}
+        for i,cue in ipairs(UI.bossCues) do v.confirmedLanes[i]=cue.lane end
+    elseif v.id~=motion.id or motion.phase~="recover" or s.paused or stale then
+        v.confirmedUntil,v.confirmedLanes=nil,nil
+    end
+    -- Lock cue targets once per authoritative id/phase. No late-join, stale or
+    -- skipped-world catch-up: those reset the baseline instead.
+    local cueChanged=reset or (fresh and wasStale) or v.id~=motion.id or v.phase~=motion.phase
+    if fresh and wasStale then UI.baseline=nil; UI.clearParticles() end
+    if cueChanged then
+        v.id,v.phase=motion.id,motion.phase
+        v.origin=motion.phase=="patrol" and v.position or addon.Model.bossPosition(s)
+        v.cueChanges=(v.cueChanges or 0)+1
+        for i,cue in ipairs(UI.bossCues) do cue.lane=motion.lanes and motion.lanes[i] or nil end
+    end
+    v.confirmed=v.confirmedUntil and now<v.confirmedUntil and motion.phase=="recover" or false
+    return v
+end
+local function bossPose(boss,motion,position,stage)
+    local phase=motion and motion.phase or "recover"
+    local direction=motion and motion.toLane< motion.fromLane and -1 or 1
+    if motion and phase~="patrol" and motion.lanes and motion.lanes[1] then
+        direction=motion.lanes[1]<position and -1 or 1
+    end
+    local stride=phase=="patrol" and math.sin(position*math.pi*4)*4 or 0
+    local leftY,rightY=20,20
+    if phase=="windup" then leftY,rightY=36,46
+    elseif phase=="attack" then leftY,rightY=24,30
+    elseif phase=="recover" then leftY,rightY=13,13 end
+    if direction<0 then leftY,rightY=rightY,leftY end
+    place(boss.legL,boss,7,1+math.max(0,stride)); place(boss.legR,boss,29,1+math.max(0,-stride))
+    place(boss.armL,boss,phase=="attack" and direction<0 and -10 or 0,leftY)
+    place(boss.armR,boss,phase=="attack" and direction>0 and 47 or 37,rightY)
+    place(boss.pupilL,boss,direction>0 and 17 or 13,45); place(boss.pupilR,boss,direction>0 and 33 or 29,45)
+    place(boss.fist,boss,direction>0 and 49 or -16,phase=="windup" and 50 or 28)
+    show(boss.fist,phase=="windup" or phase=="attack")
+    if stage==3 then
+        -- Stomp is leg-driven, unlike the ranged raised-arm release.
+        place(boss.legR,boss,phase=="attack" and 35 or 29,phase=="windup" and 16 or 1)
+        show(boss.fist,false)
+    end
+    boss.pose,boss.facing=phase,direction
+end
+local function bossCues(s,v)
+    local motion=s and s.bossMotion
+    local phase=motion and motion.phase
+    local aftermath=v and v.confirmed
+    local live=v and (phase=="windup" or phase=="attack" or aftermath)
+    local stage=s and s.stage or 1
+    local progress=phase=="attack" and math.max(0,math.min(1,1-(motion.remaining or 0)/0.5)) or 0
+    for cueIndex,cue in ipairs(UI.bossCues) do
+        local lane=aftermath and v.confirmedLanes[cueIndex] or cue.lane
+        local on=live and lane~=nil
+        local origin=on and laneX(v.origin) or 0
+        local target=on and laneX(lane) or 0
+        cue.originX,cue.targetX=origin,target
+        for j,part in ipairs(cue.parts) do
+            show(part,on and (phase=="attack" or aftermath or j<=3))
+            if on then
+                local x,y,w,h,alpha
+                if aftermath then
+                    -- Static impact residue, not an attack launched after the fact.
+                    local angle=j*math.pi/6
+                    x,y=target+math.cos(angle)*20,36+math.sin(angle)*6
+                    w,h,alpha=6,3,0.55
+                elseif phase=="windup" then
+                    -- Charge gathers at the locked boss hand / raised stomp foot.
+                    local facing=UI.boss.facing or 1
+                    x,y=origin+facing*43+(j-2)*8,stage==3 and 46+j*4 or 111+j*6
+                    w,h,alpha=5+j,5+j,0.65
+                elseif stage==3 then
+                    if j<=4 then
+                        local t=j/4
+                        x,y=origin+(target-origin)*t,36
+                        w,h,alpha=8,3,0.65
+                    else
+                        local angle=(j-4)*math.pi/4
+                        x,y=target+math.cos(angle)*(16+progress*24),35+math.sin(angle)*(4+progress*6)
+                        w,h,alpha=8,3,0.9
+                    end
+                elseif stage==2 then
+                    local t=j/12
+                    x,y=origin+(target-origin)*t,100+(42-100)*t
+                    w,h,alpha=math.max(5,math.abs(target-origin)/16),5,0.9
+                else
+                    -- Frozen sample progress still has a visible dotted trajectory;
+                    -- no delayed local impact is scheduled after a snapshot arrives.
+                    local t=j==1 and 0 or j==12 and 1 or math.max(0,math.min(1,(j-1)/11*0.85+progress*0.15))
+                    x,y=origin+(target-origin)*t,100*(1-t)+38*t+math.sin(t*math.pi)*(stage==4 and 80 or 55)
+                    w,h,alpha=j==12 and 12 or 5,j==12 and 12 or 5,j==12 and 1 or 0.6
+                end
+                part:SetSize(w,h); place(part,UI.fx,x-w/2,y-h/2)
+                part:SetColorTexture(1,stage==3 and 0.48 or 0.78,stage==2 and 0.88 or 0.34,alpha)
+            end
+        end
+    end
+end
 function UI.render()
     if not UI.root or not UI.root:IsShown() then return end
     local app,now=UI.app,UI.app.now(); local net,s=app.net,app.net.state
     local idle=net.mode=="idle"; local spectator=net.role=="spectate"; local count=net:count()
+    local bossVisual=UI.bossSample(s,net,now)
     local watch=net.spectatorCount and net:spectatorCount() or 0
     local lobby=UI.selectedLobby(); UI.displayedLobby=lobby
     local lobbyFull=lobby and lobby.count-(lobby.bots or 0)+(lobby.spectators or 0)>=40
@@ -433,6 +613,8 @@ function UI.render()
     local alive=s and addon.Model.cityAlive(s)
     local previous=UI.baseline
     local same=previous and s and previous.stage==s.stage and previous.sid==net.sid
+        and previous.epoch==(s._epoch or net.inputEpoch or 0) and (net.inSeq or 0)>=(previous.seq or 0)
+        and (net.mode~="client" or (net.inSeq or 0)<=(previous.seq or 0)+1)
     for i=1,9 do
         local hp=s and s.phase~="lobby" and (s.hp[i] or 0) or 2; local tile=UI.floors[i]
         show(tile,hp>0); show(tile.crack,hp==1)
@@ -446,16 +628,29 @@ function UI.render()
     for i=1,3 do show(UI.rubble[i],s and s.phase~="lobby" and not addon.Model.towerAlive(s,i)) end
     local boss=UI.boss; local stage=s and s.stage or 1; local bc=bossPalette[stage]
     for _,part in ipairs(boss.tint) do part[1]:SetColorTexture(bc[1]*part[2],bc[2]*part[2],bc[3]*part[2],1) end
-    show(boss,s and s.phase=="play"); boss:SetAlpha(alive and 0.6 or 1)
-    boss.artScale=alive and 0.80 or 1.5; boss:SetScale(boss.artScale); show(boss.halo,not alive)
-    place(boss,UI.city,alive and 351 or 267,alive and 218 or 32+math.sin(now*3)*2)
+    local bossShown=s and s.phase=="play"
+    local position=bossVisual and bossVisual.position or 4
+    local center=laneX(position)
+    show(boss,bossShown); boss:SetAlpha(alive and 0.92 or 1)
+    boss.artScale=1.5; boss:SetScale(boss.artScale); show(boss.halo,not alive)
+    boss.drawLane,boss.drawCenterX,boss.drawX,boss.drawY=position,center,center-24*boss.artScale,32
+    place(boss,UI.city,boss.drawX,boss.drawY)
+    bossPose(boss,s and s.bossMotion,position,stage)
+    for _,part in ipairs(boss.shield) do show(part,alive) end
+    show(UI.bossGround,bossShown); place(UI.bossGround,UI.city,center-95,0)
+    UI.bossGround.label:SetText(alive and "SHIELDED / MOVING" or "GROUND PUNCH REACH")
+    local inReach=not alive and localP and localP.y==0 and math.abs(localP.x-position)<=1
+    UI.bossGround.strip:SetColorTexture(inReach and 0.45 or 1,inReach and 1 or 0.84,0.4,0.8)
     boss.badge:SetText(alive and "SHIELDED" or "BOSS")
-    UI.bossBar:SetWidth(math.max(1,364*(s and s.boss or 10)/(8+stage*2)))
+    local bossHP=s and (s.bossHP or s.boss) or 10
+    UI.bossBar:SetWidth(math.max(1,364*bossHP/(8+stage*2)))
     UI.bossBar:SetColorTexture(alive and 0.64 or 0.98,alive and 0.61 or 0.40,alive and 0.65 or 0.26,1)
-    UI.bossLabel:SetText(s and s.phase=="play" and (alive and "SHIELD UP • flatten every floor to expose the creature" or (s.boss.." HP • EXPOSED! Ground lanes 3–5 + SPACE")) or "25 MONSTERS • 4 CITIES • ONE VERY TOASTY TEAM")
+    UI.bossLabel:SetText(bossShown and (alive and "SHIELD UP • flatten every floor; boss still moves and attacks"
+        or (bossHP.." HP • EXPOSED! Hit near boss on ground (gold bracket), SPACE")) or "25 MONSTERS • 4 CITIES • ONE VERY TOASTY TEAM")
     local hazard=s and s.phase=="play" and s.hazard
     local warning=hazard and hazard.phase=="warning"
     local impact=hazard and hazard.phase=="impact"
+    local ground=s and (addon.Model.bossAttackKind and addon.Model.bossAttackKind(s)=="ground" or stage==3)
     local dangerous={}
     if warning or impact then for _,lane in ipairs(hazard.lanes or {}) do dangerous[lane]=true end end
     for lane,mark in ipairs(UI.hazardLanes) do
@@ -463,15 +658,25 @@ function UI.render()
         if dangerous[lane] then
             local red,green,blue=impact and 1 or bc[1],impact and 0.2 or math.max(0.55,bc[2]),impact and 0.12 or bc[3]
             mark.left:SetColorTexture(red,green,blue,0.65); mark.right:SetColorTexture(red,green,blue,0.65)
+            mark.left:SetHeight(ground and 35 or 205); mark.right:SetHeight(ground and 35 or 205)
+            mark.label:ClearAllPoints(); mark.label:SetPoint("TOPLEFT",mark,"TOPLEFT",0,ground and -172 or -214)
             mark.strip:SetColorTexture(red,green,blue,0.95)
-            mark:SetAlpha(impact and 1 or (0.75+0.25*math.sin(now*5)))
+            mark:SetAlpha(impact and 1 or 0.9)
             mark.label:SetText(impact and "HIT!" or ("! "..math.ceil(hazard.remaining or 0).."s"))
         end
     end
-    if warning then UI.hazardText:SetText(hazardFlavor[stage].." IN "..math.ceil(hazard.remaining or 0).."s - LEAVE MARKED LANES!")
-    elseif impact then UI.hazardText:SetText(hazardFlavor[stage].." - IMPACT! KEEP CLEAR")
-    elseif hazard then UI.hazardText:SetText("BOSS RECOVERING • next warning in "..math.ceil(hazard.remaining or 0).."s")
+    local sample=net.mode=="client" and " • last sample" or ""
+    if s and s.paused then sample=" • PAUSED"
+    elseif bossVisual and bossVisual.stale then sample=" • STALE: pose held" end
+    local height=ground and "GROUND ONLY" or "ALL HEIGHTS"
+    if warning then UI.hazardText:SetText(hazardFlavor[stage].." IN "..math.ceil(hazard.remaining or 0).."s • "..height..sample)
+    elseif impact then UI.hazardText:SetText(hazardFlavor[stage].." • IMPACT! "..height..sample)
+    elseif s and s.bossMotion then
+        UI.hazardText:SetText((s.bossMotion.phase=="patrol" and "BOSS PATROLLING • watch its next windup"
+            or bossVisual and bossVisual.confirmed and "IMPACT CONFIRMED • boss recovering" or "BOSS RECOVERING • catch it on the ground")..sample)
+    elseif hazard then UI.hazardText:SetText("BOSS RECOVERING • next warning in "..math.ceil(hazard.remaining or 0).."s"..sample)
     else UI.hazardText:SetText(s and s.phase=="lobby" and "Choose Co-op / Brawl, add AI, then START GAME" or "") end
+    bossCues(s,bossVisual)
     UI.hazardText:SetTextColor(impact and 1 or 0.98,impact and 0.4 or 0.78,impact and 0.3 or 0.45)
     show(UI.banner,s and (s.phase=="victory" or s.phase=="clear" or s.paused))
     if s and s.paused then UI.banner.title:SetText("RAID FIRST. SMASH LATER."); UI.banner.sub:SetText("Host in combat — everyone is paused")
@@ -492,7 +697,7 @@ function UI.render()
     UI.hint:SetText(spectator and "Enjoy the chaos. Switch to Play above when there is space; this never happens automatically."
         or ("WASD / arrows: walk & climb • Space: punch • Esc: release • dodge marked lanes!\n"..(gameMode=="brawl" and "BRAWL: hit rivals; KOs are not fame. Fast respawn + shield. " or "CO-OP: crew punches are safe. ").."Climb 2, 4, 6; flatten towers, then boss."))
     UI.status:SetText((net.status or "").."  •  Drag title to move • Close hides; Leave exits")
-    UI.baseline=s and {stage=s.stage,phase=s.phase,sid=net.sid,hp={}} or nil
+    UI.baseline=s and {stage=s.stage,phase=s.phase,sid=net.sid,epoch=s._epoch or net.inputEpoch or 0,seq=net.inSeq or 0,hp={}} or nil
     if s then for i=1,9 do UI.baseline.hp[i]=s.hp[i] end end
     UI.effects(now)
 end

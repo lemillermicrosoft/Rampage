@@ -1,7 +1,7 @@
--- R3: host-authoritative chaos, bounded group broadcasts. Tokens are correlation, not secrets.
+-- R4: authoritative roaming bosses, bounded group broadcasts. Tokens are correlation, not secrets.
 local _, addon = ...
 local M = addon.Model
-local N = { PREFIX = "ToastRampage1", VERSION = "R3", MAX_BYTES = 255,
+local N = { PREFIX = "ToastRampage1", VERSION = "R4", MAX_BYTES = 255,
     MAX_MEMBERS = 40, SEND_RATE = 8, SEND_BURST = 10, BYTE_RATE = 700,
     BYTE_BURST = 1000, WIRE_OVERHEAD = 16, MAX_QUEUE = 128,
     SNAPSHOT_INTERVAL = 1.25, CHUNK_BYTES = 176, MAX_CHUNKS = 3,
@@ -42,13 +42,13 @@ local function unbase(s, low, high)
     end
     if n < low or n > high then return nil end; return n
 end
-local function packet(...) return table.concat({ "R3", ... }, "|") end
+local function packet(...) return table.concat({ N.VERSION, ... }, "|") end
 local function roleCode(role) return role == "spectate" and "s" or "p" end
 local function roleOK(role) return role == "play" or role == "spectate" end
 local function modeCode(mode) return mode == "brawl" and "b" or "c" end
 local modeNames = { c = "coop", b = "brawl" }
-local hazardCodes = { warning = "w", impact = "i", idle = "d" }
-local hazardNames = { w = "warning", i = "impact", d = "idle" }
+local motionCodes = { patrol = "p", windup = "w", attack = "a", recover = "r" }
+local motionNames = { p = "patrol", w = "windup", a = "attack", r = "recover" }
 local function tenths(n, maximum) return math.min(maximum, math.max(0, math.ceil((n or 0) * 10 - 0.00001))) end
 
 -- Fixed numeric actors and independent real-member/name stream; bots never occupy member IDs.
@@ -67,14 +67,15 @@ function N.encodeState(s, sid, seq, epoch, revision, participants)
             .. base(p.hp or 100, 2) .. base(tenths(p.ko, 40), 2) .. base(tenths(p.invuln, 30), 1)
             .. base(p.kos or 0, 2) .. base((p.botID or 0)*2 + (p.protected and 1 or 0), 1)) or "----------------"
     end
-    local hazard, h, mask = "-", s.hazard, 0
-    if h then
-        for _, lane in ipairs(h.lanes) do mask = mask + 2^(lane-1) end
-        hazard = base(h.id, 4) .. hazardCodes[h.phase] .. base(mask, 2) .. base(tenths(h.remaining, 70), 2)
+    local motion, b, mask = "-", s.phase == "play" and s.bossMotion or nil, 0
+    if b then
+        for _, lane in ipairs(b.lanes) do mask = mask + 2^(lane-1) end
+        motion = base(b.id, 4) .. motionCodes[b.phase] .. base(mask, 2) .. base(tenths(b.remaining, 70), 2)
+            .. base(b.fromLane, 1) .. base(b.toLane, 1)
     end
     local body = table.concat({ phases[s.phase], s.stage, s.boss, s.paused and 1 or 0,
         epoch or 1, revision or 1, table.concat(hp), table.concat(map), modeCode(s.mode),
-        base(tenths(s.time, 60466175), 5), hazard, table.concat(players) }, ",")
+        base(tenths(s.time, 60466175), 5), motion, table.concat(players) }, ",")
     local chunks, total = {}, math.ceil(#body / N.CHUNK_BYTES)
     assert(total <= N.MAX_CHUNKS, "snapshot exceeds configured bound")
     for part = 1, total do
@@ -95,14 +96,31 @@ function N.decodeState(body)
     local s, used, mapping, botIDs = M.new(modeNames[f[9]]), {}, {}, {}
     s.phase, s.stage, s.boss, s.paused, s._epoch, s._revision = phaseNames[f[1]], stage, boss, paused == 1, epoch, revision
     s.time, s._activeCount, s._spectators, s._botCount = clock/10, 0, 0, 0
+    if (s.phase == "play") ~= (f[11] ~= "-") then return nil end
     if f[11] ~= "-" then
-        local h = f[11]; if #h ~= 9 then return nil end
-        local id, phase = unbase(string.sub(h, 1, 4), 1, 1679615), hazardNames[string.sub(h, 5, 5)]
-        local mask, remaining = unbase(string.sub(h, 6, 7), 0, 127), unbase(string.sub(h, 8, 9), 0, 70)
-        if not id or not phase or not mask or not remaining or (phase ~= "idle" and mask == 0)
-            or (phase == "idle" and (mask ~= 0 or remaining > 30)) or (phase == "impact" and remaining > 5) then return nil end
+        local b = f[11]; if #b ~= 11 then return nil end
+        local id, phase = unbase(string.sub(b, 1, 4), 1, 1679615), motionNames[string.sub(b, 5, 5)]
+        local mask, remaining = unbase(string.sub(b, 6, 7), 0, 127), unbase(string.sub(b, 8, 9), 1, 70)
+        local from, to = unbase(string.sub(b, 10, 10), 2, 6), unbase(string.sub(b, 11, 11), 2, 6)
+        if not id or not phase or not mask or not remaining or not from or not to then return nil end
         local lanes = {}; for x = 1, 7 do if math.floor(mask/2^(x-1)) % 2 == 1 then lanes[#lanes+1] = x end end
-        s.hazard, s.hazardID = { id = id, phase = phase, lanes = lanes, remaining = remaining/10 }, id
+        if phase == "patrol" then
+            local stride = stage == 2 and 2 or (stage == 4 and (id % 2 == 0 and 2 or 1) or 1)
+            if mask ~= 0 or remaining > 50 or (stage == 3 and math.abs(to-from) > 1)
+                or (stage ~= 3 and math.abs(to-from) ~= stride) then return nil end
+        else
+            if from ~= to then return nil end
+            if phase == "recover" then
+                if mask ~= 0 or remaining > 50 then return nil end
+            else
+                local count = stage == 1 and 1 or (stage == 2 and 2 or 3)
+                if #lanes ~= count or (phase == "attack" and remaining > 5) then return nil end
+                for i = 2, #lanes do if lanes[i] ~= lanes[i-1]+1 then return nil end end
+                if stage == 3 and (lanes[1] ~= to-1 or lanes[3] ~= to+1) then return nil end
+            end
+        end
+        s.bossMotion, s.hazardID = { id = id, phase = phase, lanes = lanes, remaining = remaining/10, fromLane = from, toLane = to }, id
+        M.syncHazard(s)
     end
     for i = 1, 9 do s.hp[i] = tonumber(string.sub(f[7], i, i)) end
     for id = 1, 40 do
@@ -459,12 +477,12 @@ function methods:receive(sender, text)
         or type(text) ~= "string" or #text > N.MAX_BYTES or #text < 4 then return false end
     -- Every raid broadcast reaches every client. Discard peer gameplay before
     -- allocating a bucket or splitting fields; only discovery is peer-visible.
-    if self.mode ~= "host" and sender ~= self.hostName and text ~= "R3|Q" and string.sub(text, 1, 5) ~= "R3|A|" then return false end
+    if self.mode ~= "host" and sender ~= self.hostName and text ~= "R4|Q" and string.sub(text, 1, 5) ~= "R4|A|" then return false end
     local now = self.env.now(); local bucket = self.receiveBuckets[sender] or { tokens = 24, time = now }
     self.receiveBuckets[sender] = bucket
     bucket.tokens = math.min(24, bucket.tokens + math.max(0, now - bucket.time) * 16); bucket.time = now
     if bucket.tokens < 1 then return false end; bucket.tokens = bucket.tokens - 1
-    local f = split(text, "|"); if f[1] ~= "R3" then return false end
+    local f = split(text, "|"); if f[1] ~= N.VERSION then return false end
     local kind = f[2]
     if kind == "Q" and #f == 2 then
         if self.mode == "host" and (not self.lastAdvert or now - self.lastAdvert >= 2) then self:advertise() end

@@ -1,99 +1,99 @@
-# QA — chaos / AI / opt-in Brawl release
+# QA — roaming-boss release (R4)
 
-## Evidence boundary and release gate
+## Build and installation boundary
 
-The owner supplied an actual WoW screenshot of the **published v0.2.0 UI in solo play**. It shows original graphics working, missing arrow glyphs and a stale visible “Window hidden” label. The red “You have no target” message was **not attributed to Rampage** without evidence. The screenshot does not prove this new AI/HP/Brawl/boss iteration, native keyboard routing or live raid networking.
+Issue #7 / PR #8 was developed in isolated worktree `C:\Users\leroy\repos\Rampage-boss-motion` from v0.3.0 commit `7c27d1b8900e37d855ec64539923697231469bc9`. The owner authorized publication on October29,2026 at12:57. Independent review passed the original72 checks,9 grammar parses,audit0,28,000 off-grid round trips and all13 candidate archive hashes, identifying one narrow render-stall cue defect corrected before publication.
 
-The owner explicitly authorized publishing the reviewed `ac5bef3` AI/Brawl build on October 29, 2026 at 10:34 after positive in-game feedback. This lifts the prior feature-only publication gate, but is not native two-client/raid/input certification. Independent QA passed 55 tests, 9 grammar checks, zero audit findings, four supplemental probes and all13 candidate entry hashes. The release pipeline assigns a new matching TOC/runtime version. **Both machines/all participants must use the same new versioned R3 release**, not published v0.2.0/R2 or the earlier candidate archive. Existing release and candidates are preserved; roaming bosses/new level designs are not included in this release.
+The existing pipeline assigns a new matching TOC/app version and runs full exact bumped-runtime tests before tagging/uploading. Primary `C:\Users\leroy\repos\Rampage` advances only to the approved release and stays there. The anniversary AddOns/Rampage junction remains pointed at that primary checkout; no junction change, forced reload or SavedVariables edits. The isolated worktree and old archives are preserved.
 
-Headless execution: Node v24.18.0, Fengari0.1.5 (**Lua5.3 semantics**); separate luaparse0.3.1 **Lua5.1 grammar**. No native Lua5.1 VM, actual new client rendering/input/taint/audio or real 25-/40-client transport proof is claimed.
+**Both machines/all participants need the same new versioned R4 release**, incompatible with published v0.3.0/R3. Do not mix old releases or head-labelled playtest archives. After publication the owner can safely reload the linked release when ready; the other machine installs the matching ZIP. Do not extract over the owner's junction.
 
-## Executed checks
+Unique levels remain later backlog. No new map, body-contact damage, platform physics, service/dependency, or borrowed art/audio.
 
-- Pre-correction integrated baseline: `npm test` **55/55**. Current release adds one actual-TOC control-persistence regression: **56 checks** (14 model +23 protocol +19 WoW/UI/input/audio); the existing release gate reruns the full exact version-bumped runtime before publication.
-- `npm run check:lua51`: **9/9 files parsed** (six actual TOC runtime modules, three Lua test suites).
-- `node tests/run.cjs --suite=wow`: **19/19** with the requested control-persistence correction.
-- `npm audit --audit-level=moderate`: **zero vulnerabilities**; no dependency changes.
-- `git diff --check`: clean. No workflow, release script, CurseForge config or installed-skill changes.
-- `node tests/ui-preview.cjs --scene brawl|hazard|ko ...`: exports the actual UI.lua geometry via mocks. Rasterized review PNGs and inspected Brawl/AI, warning and KO scenes; regenerated raid/solo fixtures. **These are mock layouts, not WoW screenshots.**
-- After 500 animated 25-actor renders: **104 frames, 1,349 textures, 96 fonts**, seven fixed lane markers and 72 recycled particles; no frame/texture/font growth. This does not establish native frame time or absence of all Lua allocations.
+## Executed verification
 
-## Model gameplay evidence (14 tests)
+- Full integrated `npm test`: **73 checks** —22 model,26 protocol,25 actual-TOC mocked WoW/UI/input/audio tests. All prior gameplay/security/capacity/control checks retained; moving-threat fixtures now drive the sole authoritative `bossMotion` state.
+- `npm run check:lua51`: **9 files**, actual six TOC runtime modules plus three Lua test suites.
+- Final focused UI suite: **25/25**, including confirmed-impact residue and no catch-up/replayed damage.
+- New actual-UI regression first failed against2ae1dd3: no renders while a warning sample aged4s, then a consecutive same-cycle recovery incorrectly confirmed residue. The fix measures prior sample age before overwriting its timestamp, combines it with remembered staleness, suppresses confirmation and clears stale baseline particles. Tests cover no intermediate render, >2.5s suppression, exact2.5s timely boundary, ordinary1.25s confirmation and existing rendered-stale/pause/replay/late-join guards. This changes no gameplay, wire schema, latency or damage behavior.
+- `npm ci --ignore-scripts` in the isolated worktree: five locked development packages, zero audit findings; no manifest changes or global installation.
+- `npm audit --audit-level=moderate`: **zero vulnerabilities**. `git diff --check`: clean.
+- Input.lua and Sound.lua untouched from v0.3.0; adapter code unchanged except the release pipeline's version assignment. TOC version is synchronized by that same pipeline. No release script/config/workflow/installed-skill changes.
 
-Retains original city/movement/climbing/shared destruction/boss exposure/four-stage/replay/score tests, plus:
-- Default Co-op rejects human-human/human-AI friendly damage.
-- Brawl actual mutual human-human, human-AI, AI-human and AI-AI punches; same-height/adjacent range, action/PvP cooldowns, no multi-target splash.
-- 100HP,20 punch damage/35 maximum hazard damage, bounded knockback, separate KO credit, four-second KO, three-second respawn immunity, protection and timer freeze.
-- All four bosses repeatedly warn/impact/recover while shielded and exposed, with distinct lane patterns; actual health loss and legal dodge.
-- A stationary AI is actually damaged and KO'd by hazards, not just visually flashing.
-- A single deterministic AI clears all four bosses with no human inputs in **108.8 simulated game seconds**, exact city fame2,380; repeated run gives the same time.
-- Host pause freezes game clock, hazard timing and respawn state. Work is bounded by substeps; stalled-host catch-up is clamped.
+Execution is **Fengari0.1.5 Lua5.3 semantics**, with separate luaparse0.3.1 Lua5.1 grammar. These are not native Lua5.1/WoW API/taint or live multiplayer certifications.
 
-## Protocol / authority evidence (23 tests)
+## Model:22 checks
 
-Retains roster/host/session/generation/input epoch/role/sequence, malformed/oversize/stale/future/replay, admission challenge, role changes, late join/reconnect, chunk atomicity, loss/reorder/duplicate, timeout/departure and bounded queue/bucket/assembly tests. Added/extended:
-- **R3 rejects R2**; Co-op/Brawl advertisement and admission mode must agree.
-- Midmatch mode changes rejected; mode changes also rejected at lobby/victory while **any player or spectator is joined**. Already-admitted clients retain consent and fail closed on an unsolicited changed-mode world.
-- AI is host/solo authority, at most5/25actors, no physical member IDs/roster names/tokens. Guests cannot command forged AI actors. Human admission/Play requests vacate the oldest AI first; real people are not displaced.
-- Spectators remain unattackable/read-only with no avatar/HP/score/input/Start; mode and role switches are explicit.
-- Authenticated combat notification sequences reject old/conflicting toggles; host roster fallback OR notification protection. **Roster protection is reconciled before the impact/AI tick**; regression places impact at the very next tick and proves zero damage.
-- Full worlds preserve clock, threat id/lanes/phase/timer, health, KO, immunity, protection, KOs and fixed AI identities. Late join is presentation-only; old snapshots cannot reapply damage.
-- Three-second snapshot-blackout fixture: warning still visible after recovery, a legal client action escapes and actor takes no impact damage. Arbitrary loss is not guaranteed fair.
+Baseline city/movement/climbing/shared destruction, four bosses/replay/score, default Co-op no friendly fire, Brawl mutual hits/range/cooldown, health/KO/respawn/immunity/protection/pause all retained. Added:
 
-### Measured 40-node simulation
+- Actual fractional patrol in lanes2–6, reflected route bounds, ≤2 lanes per5 seconds, deterministic partitioned ticks.
+- Shared `bossPosition` / `bossInReach` for model punches and AI chase; exposed ground distance≤1, shield unchanged. Old fixed3–5 hitbox no longer works when the boss moves away. No body-contact damage.
+- Every boss phase freezes during host combat; the known-segment helper never advances a phase. Stage/replay resets position/cycle/AI action clock and clears old hazards.
+- Seven-second warning locks origin/lanes; once-only35 damage impact;0.5s attack;5s stationary recovery. At least four safe lanes.
+- Ranged columns affect all heights; Snack Tax stomp affects ground only. Knockback uses the actual boss origin, not fixed lane4.
+- Nearest eligible target pursuit with deterministic lowest-slot ties; protected/KO actors excluded.
+- One AI clears four moving bosses in **100.8 game seconds**; five AI in **50.8s Co-op /85.2s Brawl**, with movement observed on all stages. Separate fixtures prove AI damage/KO and legal warning avoidance.
 
-Every emitted broadcast independently reaches every other node through the simulated transport. Per-send byte/message budgets and per-tick queue/assembly bounds are asserted.
+## Network:26 checks
 
-| Fixture | Observed result |
+Existing host/actual-sender/roster/session/generation/epoch/sequence/role authority, spectator immunity/read-only behavior, Co-op/Brawl consent at join and victory, capacities/bot eviction, malformed/stale/future input, challenge handshake, reconnection/liveness and pre-impact combat protection remain.
+
+R4 adds an eleven-character boss record replacing the nine-character hazard: cycle ID, phase, target mask, remaining deciseconds and source/destination lanes. Every phase of all four bosses round-trips. Strict phase/clock/route/mask constraints reject bad worlds atomically; R1–R3 are rejected. Mid-patrol late join reconstructs position; decode/client tick never replays impact damage. Off-grid rounding adds at most0.04 lane positional quantization.
+
+### Measured, not estimated
+
+Every emitted broadcast independently fans out to other real nodes. Byte/message/queue/assembly bounds are checked during simulation.
+
+| Fixture | Observed |
 | --- | --- |
-| Maximum-field 25-actor world | **3 fragments,591 combined payload bytes**,639 charged bytes; every packet≤255 |
-| Forty96-byte-name real participants | simultaneous admission **40.4s**, full reconnect converges |
-| Maximum-name host averages | **4.27 msgs/s,625.1 payload B/s,693.4 charged B/s** |
-| Maximum-name queue/world gap | **52/128**, **1.5s** |
-| Mixed AI run | **87.4 simulated seconds**,20 human actors+5AI+20spectators; four bosses,replay,host combat,movement |
-| Network disruption | **4.35% per-recipient loss**,0–300ms jitter/reordering and duplicates; exact final convergence |
-| Mixed-run host | **3.43 msgs/s,454.6 payload B/s,509.5 charged B/s** |
-| Whole group | **41.65 msgs/s,1,544.5 payload B/s**,422 guest heartbeats |
-| Mixed-run queue/max world gap | **41/128**, **4.0s** |
+| Maximum valid world | **494 assembled body bytes**,3 fragments,**593 payload /641 charged bytes**,largest packet**209/255**,fragment max176 |
+| Forty96-byte-name participants | all admitted in **41.3s**,simultaneous reconnect converges |
+| Maximum-name host | **4.20msg/s,618.7 payloadB/s,685.9 chargedB/s**,queue53/128,world gap1.5s |
+| Mixed run | **82.9 simulated seconds**,40 real nodes =20 human actors+20 spectators,plus5 AI;four bosses/replay/combat |
+| Disruption | deterministic **4.35% per-recipient loss**,0–300ms jitter/reordering/duplicates;exact final convergence |
+| Mixed host | **3.46msg/s,457.8 payloadB/s,513.1 chargedB/s** |
+| Whole group | **36.00msg/s,1,375.9 payloadB/s**,402 guest heartbeats |
+| Mixed queue/world gap | **41/128**,**4.0s** maximum |
 
-Hard budgets unchanged:8msgs/s,700chargedB/s,burst10/1,000 (16-byte allowance/message), queue128, three assemblies×three fragments,6s expiry. Complete worlds every **1.25s (0.8Hz)**; names/roles carousel one record/second. Join timeout90s, world timeout20s, guest removal35s. The seven-second warning exceeds the tested worst world gap, but **delay/loss outside the fixture can still hide a warning**. Remote countdowns are authoritative snapshot samples, not perfect clock synchronization; dodge early. No prediction or competitive PvP fairness claim.
+Human drivers chase from their delayed snapshots, not teleported omniscient positions. Both40-member fixtures assert measured host averages under700 chargedB/s and8msg/s, alongside per-send token-bucket checks. No bandwidth increase.
 
-## Actual UI/input/audio mock coverage (19 tests)
+Unchanged limits:8msg/s burst10,700 chargedB/s burst1,000 (16-byte allowance/message),queue128,three assemblies×three fragments,6s expiry;1.25s worlds,1s name carousel,90s join/20s world/35s guest timeouts. The three-second blackout fixture still lets a client see a warning and legally dodge. **Arbitrary loss can hide warnings.** Seven seconds exceeds the measured4s gap, not every possible delay. No prediction/precision-PvP claim.
 
-Full TOC loading; saved variables; solo/mouse fallback; explicit capture and all mapped keys consumed; held-repeat bounds; unknown/chat/edit-focus/Escape/Alt/Ctrl/Meta/hide/leave/combat/world departure/missed-key-up safety; no restricted propagation mutation in combat; no permanent/override binding or public chat calls.
+## Actual UI/input/audio mock:25 checks
 
-New checks exercise:
-- ASCII fallback labels and visible reopen text instead of stale Window hidden.
-- User's pre-publication correction: preserve chosen keyboard/mouse mode across clear/intermission and real model next-stage advance. Capture eligibility is separate from action eligibility. Gameplay inputs remain consumed but inactive during transition, old held/OS-repeat actions blocked until key-up, fresh actions work next stage. Escape, close, combat, chat, unknown shortcut and focus-loss during intermission cancel capture and never regrab next stage. KO/victory release behavior unchanged.
-- Button hover/pressed/disabled/selected states.
-- Mode setup, explicit JOIN BRAWL and spectator-to-player consent; generic chat commands do not auto-consent.
-- Host/solo AI controls, five-bot/25-actor cap, distinct bot names/labels/hover chips and no fake roster.
-- Admission at 40-real-seat cap and AI replacement at full actor capacity; spectator conversion can vacate an AI.
-- Mode selection disabled while real guests are joined, including victory.
-- HP bars, local/crew/monster health, KO/countdown/shield, seven threat lanes/warning/impact/recovery; render calls cannot alter model health.
-- Host read-only canonical roster→`UnitAffectingCombat` adapter fallback.
-- Optional audio defaultoff/missingprovider/None/playbackfalse/exception/mute, rare local hurt/ownhit and major spectator transitions, dedupe/no catch-up; no external assets copied.
+Real TOC loading; existing combat, keyboard propagation/capture, chat/focus/modifier/Escape/hide/leave/long-stall/physical-key-up safety, mouse fallback, saved variables, optional audio and capacity/consent controls retained.
 
-Native `IsWindowFocused` is guarded, not assumed present. Physical key-state reconciliation catches lost key-up, not every possible taskbar focus change with no held keys. Native focus/taint remains a manual gate.
+**The shipped level-transition correction is unchanged:** selected keyboard/mouse mode stays across ordinary clear/intermission/next-stage transitions. No actions while inactive; known keys remain consumed; held inputs require release/fresh press. Explicit/safety releases never auto-recapture. No input/adapter/audio edits.
+
+Additional evidence:
+- Ground boss center matches model position while shielded/exposed; constant1.5 scale, moving shield and ±1-lane reach bracket. Host rendering never extrapolates from wall clock.
+- Guest smoothing follows only the known patrol, capped at its endpoint and2.5s snapshot age. Pause/staleness freezes; no next phase predicted. Stage/epoch/replay/gap/hide/session changes reset visual baselines.
+- Distinct stride/raised windup/release/lowered recovery poses and stomp leg pose. Fixed48-texture origin-to-target cues for crumb/beam/stomp/barrage; ground/all-height warnings distinguished.
+- A0.5s attack can fall between1.25s worlds. A timely consecutive same-cycle windup→recovery receipt can show **0.65s static residue**, labelled IMPACT CONFIRMED. It does not fire a late projectile, infer damage, award score, repeat per frame, or trigger for late join/gap/staleness/pause. Missed attack frames otherwise remain missed.
+- Exactly500 animated25-actor renders leave **105 frames /1,404 textures /97 fonts**,seven lane markers,72 particles and48 boss-cue textures unchanged. This establishes bounded WoW-object pools, not zero Lua allocations or native frame time.
 
 ## Inspected visual previews
 
-`docs/previews/brawl-mock.svg`, `hazard-mock.svg`, `ko-mock.svg` come from real UI.lua + fixture state. Review PNGs live under `artifacts/rampage/chaos-v3/`, outside the addon runtime Media. Inspected mode selection/readable JOIN/PLAY, AddAI/RemoveAI, AI/KO labels, local health/shield, KO-disabled controls, warning lane strips/edges and action labels. No normal-size button/text clipping seen. Full25monster overlap still exists; hover chips/local highlight help. Native font/color contrast/scaling must still be checked in game.
+Actual UI.lua geometry exported using explicit WoW mocks, not hand-drawn concepts:
+- `boss-patrol-mock`: shielded boss at lane2.5 with stride and ground bracket.
+- `boss-windup-mock`: exposed boss at lane4 with raised charge and locked warning lane.
+- `boss-impact-mock`: boss at lane5 with crumb trajectory toward warned lane3.
 
-## Manual client checklist — outstanding for this new candidate
+SVGs are underdocs/previews; final review PNGs under `artifacts/rampage/boss-motion/`. Inspected readable mode/health/input controls, changing ground positions/poses, warning columns, visible origin trajectory and reach bracket. No normal-size control clipping seen. Character/boss overlap is intentional; native fonts/scaling/raid clutter still require testing. These are **MOCK LAYOUTS, not WoW screenshots**. Earlier preview files depict their historical builds.
 
-Use identical R3 ZIPs and voluntarily reload only in a safe area.
+## Manual playtest outstanding
 
-- [ ] `/rampage solo`: defaultCo-op, AddAI one at a time, bot climbs/smashes; RemoveAI works; HP and bosswarnings visible.
-- [ ] Leave→Brawl→Solo→AddAI: move near same-height AI and exchangehits; distinct KOs versus fame, boundedknockback,4srespawn+3simmunity. No ally damage inCo-op.
-- [ ] Eachboss warns beforeandaftershielddrops; moveearly outofmarkedlanes, observeavoiddamage; deliberatelystay for35damage. Checknativecontrast/countdownreadability.
-- [ ] KeyboardPLAY knownkeys consumed, Escape releases; unknownkeys/chat/searchpass; hide/reopenlabeltruthful, ASCIIfallbacklegible, no stuckrepeats afterAltTab/taskbar/combat/worldload. NormalWoWmovement/spells notstolen whenreleased.
-- [ ] Two real clients: lobbyCo-op/Brawllabelconsent, no modechange whileguestjoined, spectatorread-only, human/AI mutualdamage inBrawl, healthyplayer/UIstateconvergence. Native latencyat1.25sworldcadence mustbeacceptable before largeraid.
-- [ ] Guest enters realWoWcombat whilehazardnearsimpact: locallyreleases/hides and hostprotects; hostcombatpausesall. Understandinherentdetectiondelay.
-- [ ] Scale toward25actors/40realparticipants inclbots/spectators, latejoin/reconnect, botvacatesforhuman, no identitycollision or lastmemberstarvation, actualaddontrafficlimits.
-- [ ] Fourbosscompletion/replay resetshealth/KOs/hazards; hostdisconnect/leaveendscleanly,nohostmigration.
-- [ ] OptionalBM stillOFFbydefault; enableonlyifwanted; rarelocalhurt/impact,mute/None respected,noaudiochorus or globalvolumechanges.
+Use the same new versioned release on all participating machines:
 
-## Handoff
+- [ ] `/rampage solo`→Add AI→PLAY. Watch shielded patrol,7s windup/attack,then5s recovery. No body-contact damage.
+- [ ] Flatten city; chase and hit inside the actual boss bracket, miss outside even in old lanes3–5. AI also chases and finishes.
+- [ ] Observe all four personalities. Ranged columns damage all heights; Snack Tax stomp is ground-only. Targets stop tracking once warning starts; dodge early.
+- [ ] Control selection survives cities; held actions need release/fresh press. Escape/close/chat/focus/combat still release and never auto-arm.
+- [ ] Host combat pauses movement/windup/recovery; guest protection precedes known impacts, while acknowledging initial detection delay.
+- [ ] Two actual clients in one PARTY/RAID on the sameR4 ZIP: warning visibility, hit response, interpolation/pause/staleness, late join/replay. Separate parties/guild chat are not connected.
+- [ ] Brawl consent, human/AI hits/KO, spectator immunity and bot eviction; scale only after two-client response is acceptable.
+- [ ] Native fonts/scaling/taint/taskbar focus/audio; optional BM off/mute/None unchanged. Restore matching publishedv0.3.0 on both machines if rolling back.
 
-Publish the currently approved AI/Brawl runtime through the existing pipeline and preserve v0.2.0/prior candidates. Verify exact bumped-runtime tests, portable archive hashes, GitHub asset and CurseForge upload receipt separately from public approval. Leave the main checkout on the new release for two-machine compatibility. No moving-boss implementation, forced client reload, junction swap or external SavedVariables changes in this publication task.
+## Authorized publication handoff
+
+Publish the reviewed PR with the render-stall fix through the existing regular release pipeline. Verify exact versioned archive/per-entry hashes, downloaded GitHub asset, tag/main/PR/issue state and CurseForge upload receipt separately from moderation/public visibility. Leave primary clean on the new release with its junction unchanged. Preserve the isolated worktree and older archives. This authorization covers current moving bosses only; unique levels remain future work.
