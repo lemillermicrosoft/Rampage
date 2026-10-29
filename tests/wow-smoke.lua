@@ -52,8 +52,9 @@ function methods:RegisterEvent(event) self.events[event] = true end
 function methods:UnregisterEvent(event) self.events[event] = nil end
 function methods:SetScript(event, callback) self.scripts[event] = callback end
 function methods:GetScript(event) return self.scripts[event] end
-function methods:CreateTexture(name, layer)
-    local t = newObject("Texture", name, self); t.layer = layer; textures[#textures + 1] = t; return t
+function methods:CreateTexture(name, layer, template, sublevel)
+    assert(not template); assert(not sublevel or sublevel>=-8 and sublevel<=7)
+    local t = newObject("Texture", name, self); t.layer,t.sublevel = layer,sublevel or 0; textures[#textures + 1] = t; return t
 end
 function methods:CreateFontString(name, layer, template)
     local f = newObject("FontString", name, self); fonts[#fonts + 1] = f; return f
@@ -250,6 +251,31 @@ function runWoWSmoke()
         SlashCmdList.RAMPAGE(""); assert(not ui.root:IsShown())
         combat = true; event("PLAYER_REGEN_DISABLED"); combat = false; event("PLAYER_REGEN_ENABLED")
         assert(not ui.root:IsShown()); SlashCmdList.RAMPAGE(""); assert(ui.root:IsShown())
+    end)
+    check("WoW mock: restored pane windows and facade trim have explicit native ordering at both health states", function()
+        local s=app.net.state; local oldHP={}
+        eq(ui.root:GetScale(),1)
+        for i,tile in ipairs(ui.floors) do
+            oldHP[i]=s.hp[i]
+            eq(tile.body.layer,"BACKGROUND"); eq(#tile.windows,3); eq(#tile.mullions,6)
+            eq(#tile.sills,3); eq(#tile.bricks,4)
+            for _,hp in ipairs({2,1}) do
+                s.hp[i]=hp; ui.render(); assert(tile:IsShown()); eq(tile.crack:IsShown(),hp==1)
+                for w,pane in ipairs(tile.windows) do
+                    assert(pane:IsShown() and pane.alpha>=0.65)
+                    eq(tile.windowFrames[w].layer,"ARTWORK"); eq(tile.windowFrames[w].sublevel,0)
+                    eq(pane.layer,"ARTWORK"); eq(pane.sublevel,1)
+                    eq(tile.glints[w].layer,"ARTWORK"); eq(tile.glints[w].sublevel,2)
+                    eq(tile.sills[w].layer,"OVERLAY"); assert(tile.sills[w]:IsShown())
+                end
+                for _,bar in ipairs(tile.mullions) do eq(bar.layer,"OVERLAY"); assert(bar:IsShown()) end
+                for _,brick in ipairs(tile.bricks) do eq(brick.layer,"BORDER"); assert(brick:IsShown()) end
+                assert(tile.crack:GetFrameLevel()>tile:GetFrameLevel())
+            end
+            s.hp[i]=0; ui.render(); assert(not tile:IsShown() and not tile.windows[1]:IsShown())
+            s.hp[i]=oldHP[i]
+        end
+        ui.render()
     end)
     check("WoW mock: 25-player fixed geometry pools after 500 animated renders", function()
         local frameCount, textureCount, fontCount = #frames, #textures, #fonts
@@ -741,7 +767,7 @@ function captureWoWPreview()
         records[#records+1]='{"kind":'..quote(kind)..',"x":'..(p.x-root.x)..',"y":'..(root.h-(p.y-root.y)-p.h)
             ..',"w":'..p.w..',"h":'..p.h..',"r":'..c[1]..',"g":'..c[2]..',"b":'..c[3]
             ..',"alpha":'..p.alpha*(c[4] or 1)..',"level":'..(o.parent and o.parent.level or 1)
-            ..',"layer":'..quote(o.layer or "OVERLAY")..',"text":'..quote(o.text)..',"size":'..((o.fontSize or 12)*p.scale)
+            ..',"layer":'..quote(o.layer or "OVERLAY")..',"sublevel":'..(o.sublevel or 0)..',"text":'..quote(o.text)..',"size":'..((o.fontSize or 12)*p.scale)
             ..',"align":'..quote(o.align or "LEFT")..'}'
     end
     for _,o in ipairs(textures) do add(o,"rect") end

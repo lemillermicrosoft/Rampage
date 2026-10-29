@@ -8,8 +8,8 @@ local palette = { {0.37,0.88,0.61}, {1,0.61,0.32}, {0.58,0.69,1}, {1,0.49,0.66},
 local bossPalette = { {0.92,0.60,0.25}, {0.56,0.73,0.79}, {0.87,0.35,0.49}, {0.65,0.48,0.85} }
 local hazardFlavor = { "CRUMB THROW", "PERMIT BEAM", "GROUND STOMP", "THREE-COLUMN BARRAGE" }
 local function laneX(lane) return 31+(lane-1)*95 end
-local function rect(parent, x, y, w, h, r, g, b, a, layer)
-    local t = parent:CreateTexture(nil, layer or "ARTWORK")
+local function rect(parent, x, y, w, h, r, g, b, a, layer, sublevel)
+    local t = parent:CreateTexture(nil, layer or "ARTWORK", nil, sublevel or 0)
     t:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", x, y); t:SetSize(w, h)
     t:SetColorTexture(r, g, b, a or 1)
     return t
@@ -233,22 +233,35 @@ function UI.create(app)
         for floor=1,3 do
             local tile=CreateFrame("Frame",nil,city); tile:SetFrameLevel(city:GetFrameLevel()+2)
             tile:SetSize(80,66); tile:SetPoint("BOTTOMLEFT",city,"BOTTOMLEFT",x-40,31+(floor-1)*68)
-            tile.body=rect(tile,0,0,80,66,0.40,0.34,0.37)
-            rect(tile,0,0,7,66,0.28,0.24,0.29); rect(tile,75,0,5,66,0.23,0.20,0.26)
-            rect(tile,-3,62,86,4,0.74,0.55,0.40); rect(tile,0,57,80,5,0.25,0.22,0.26)
-            tile.windows={}
+            -- Explicit draw layers/sublevels: native WoW must not rely on the
+            -- creation-order tie breaking that made the mock look more detailed.
+            tile.body=rect(tile,0,0,80,66,0.40,0.34,0.37,1,"BACKGROUND",0)
+            tile.trim={rect(tile,0,0,7,66,0.28,0.24,0.29,1,"BORDER",0),
+                rect(tile,75,0,5,66,0.23,0.20,0.26,1,"BORDER",0),
+                rect(tile,-3,62,86,4,0.74,0.55,0.40,1,"OVERLAY",1),
+                rect(tile,0,57,80,5,0.25,0.22,0.26,1,"BORDER",1)}
+            tile.bricks={}
+            for row=1,4 do
+                tile.bricks[row]=rect(tile,row%2==0 and 8 or 51,2+row*12,19,1,0.65,0.47,0.36,0.7,"BORDER",1)
+            end
+            tile.windows,tile.windowFrames,tile.mullions,tile.sills,tile.glints={},{},{},{},{}
             for w=1,3 do
-                rect(tile,12+(w-1)*22,16,15,31,0.13,0.16,0.23)
-                tile.windows[w]=rect(tile,14+(w-1)*22,18,11,27,1,0.72-(tower%2)*0.08,0.33)
-                rect(tile,12+(w-1)*22,29,15,3,0.37,0.28,0.27)
+                local wx=12+(w-1)*22
+                tile.windowFrames[w]=rect(tile,wx,16,15,31,0.13,0.16,0.23,1,"ARTWORK",0)
+                tile.windows[w]=rect(tile,wx+2,18,11,27,1,0.72-(tower%2)*0.08,0.33,1,"ARTWORK",1)
+                tile.mullions[#tile.mullions+1]=rect(tile,wx,29,15,3,0.37,0.28,0.27,1,"OVERLAY",0)
+                tile.mullions[#tile.mullions+1]=rect(tile,wx+7,18,1,27,0.37,0.28,0.27,1,"OVERLAY",0)
+                tile.sills[w]=rect(tile,wx-1,14,17,2,0.83,0.63,0.43,1,"OVERLAY",1)
+                tile.glints[w]=rect(tile,wx+3,34,2,8,1,0.91,0.66,0.7,"ARTWORK",2)
             end
             tile.crack=CreateFrame("Frame",nil,tile); tile.crack:SetSize(80,66); tile.crack:SetPoint("BOTTOMLEFT",tile,"BOTTOMLEFT",0,0)
+            tile.crack:SetFrameLevel(tile:GetFrameLevel()+1)
             rect(tile.crack,35,33,5,30,0.09,0.08,0.12); rect(tile.crack,39,25,10,8,0.09,0.08,0.12)
             rect(tile.crack,45,0,5,28,0.09,0.08,0.12)
             UI.floors[(tower-1)*3+floor]=tile
         end
         local roof=UI.floors[(tower-1)*3+3]
-        rect(roof,7,67,66,8,0.25,0.20,0.25); rect(roof,13,75,4,14,0.18,0.18,0.23)
+        rect(roof,7,67,66,8,0.25,0.20,0.25,1,"BORDER",1); rect(roof,13,75,4,14,0.18,0.18,0.23,1,"BORDER",1)
         text(roof,9,3,-3,74,"CENTER"):SetText(({"CRUMB CO.","TOAST BANK","SNACK HOTEL"})[tower])
         local rubble=CreateFrame("Frame",nil,city); rubble:SetSize(94,25); rubble:SetPoint("BOTTOMLEFT",city,"BOTTOMLEFT",x-47,30)
         for j=1,8 do rect(rubble,(j-1)*11,(j%3)*3,15,6+(j%3)*4,0.51,0.37,0.30) end
@@ -619,7 +632,9 @@ function UI.render()
         local hp=s and s.phase~="lobby" and (s.hp[i] or 0) or 2; local tile=UI.floors[i]
         show(tile,hp>0); show(tile.crack,hp==1)
         tile.body:SetColorTexture(hp==2 and 0.40 or 0.27,hp==2 and 0.34 or 0.23,hp==2 and 0.37 or 0.26,1)
-        for _,w in ipairs(tile.windows) do w:SetAlpha(hp==2 and 0.9+math.sin(now*1.3+i)*0.08 or 0.23) end
+        -- Damage cracks/darkens the facade without erasing its window detail.
+        for _,w in ipairs(tile.windows) do w:SetAlpha(hp==2 and 0.9+math.sin(now*1.3+i)*0.08 or 0.65) end
+        for _,glint in ipairs(tile.glints) do glint:SetAlpha(hp==2 and 1 or 0.6) end
         if same and previous.hp[i] and hp<previous.hp[i] then
             local tower=math.floor((i-1)/3)+1; local floor=(i-1)%3+1
             UI.burst(126+(tower-1)*190,48+(floor-1)*68,hp==0 and 14 or 7,hp==0 and "dust" or "hit")

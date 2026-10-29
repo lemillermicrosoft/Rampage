@@ -12,9 +12,9 @@ Unique levels remain later backlog. No new map, body-contact damage, platform ph
 
 ## Executed verification
 
-- Full integrated `npm test`: **73 checks** —22 model,26 protocol,25 actual-TOC mocked WoW/UI/input/audio tests. All prior gameplay/security/capacity/control checks retained; moving-threat fixtures now drive the sole authoritative `bossMotion` state.
+- Full integrated `npm test`: **74 checks** —22 model,26 protocol,26 actual-TOC mocked WoW/UI/input/audio tests. All prior gameplay/security/capacity/control checks retained; moving-threat fixtures now drive the sole authoritative `bossMotion` state.
 - `npm run check:lua51`: **9 files**, actual six TOC runtime modules plus three Lua test suites.
-- Final focused UI suite: **25/25**, including confirmed-impact residue and no catch-up/replayed damage.
+- Final focused UI suite: **26/26**, including confirmed-impact residue, no catch-up/replayed damage and explicit restored building-detail layering.
 - New actual-UI regression first failed against2ae1dd3: no renders while a warning sample aged4s, then a consecutive same-cycle recovery incorrectly confirmed residue. The fix measures prior sample age before overwriting its timestamp, combines it with remembered staleness, suppresses confirmation and clears stale baseline particles. Tests cover no intermediate render, >2.5s suppression, exact2.5s timely boundary, ordinary1.25s confirmation and existing rendered-stale/pause/replay/late-join guards. This changes no gameplay, wire schema, latency or damage behavior.
 - `npm ci --ignore-scripts` in the isolated worktree: five locked development packages, zero audit findings; no manifest changes or global installation.
 - `npm audit --audit-level=moderate`: **zero vulnerabilities**. `git diff --check`: clean.
@@ -59,7 +59,7 @@ Human drivers chase from their delayed snapshots, not teleported omniscient posi
 
 Unchanged limits:8msg/s burst10,700 chargedB/s burst1,000 (16-byte allowance/message),queue128,three assemblies×three fragments,6s expiry;1.25s worlds,1s name carousel,90s join/20s world/35s guest timeouts. The three-second blackout fixture still lets a client see a warning and legally dodge. **Arbitrary loss can hide warnings.** Seven seconds exceeds the measured4s gap, not every possible delay. No prediction/precision-PvP claim.
 
-## Actual UI/input/audio mock:25 checks
+## Actual UI/input/audio mock:26 checks
 
 Real TOC loading; existing combat, keyboard propagation/capture, chat/focus/modifier/Escape/hide/leave/long-stall/physical-key-up safety, mouse fallback, saved variables, optional audio and capacity/consent controls retained.
 
@@ -70,7 +70,13 @@ Additional evidence:
 - Guest smoothing follows only the known patrol, capped at its endpoint and2.5s snapshot age. Pause/staleness freezes; no next phase predicted. Stage/epoch/replay/gap/hide/session changes reset visual baselines.
 - Distinct stride/raised windup/release/lowered recovery poses and stomp leg pose. Fixed48-texture origin-to-target cues for crumb/beam/stomp/barrage; ground/all-height warnings distinguished.
 - A0.5s attack can fall between1.25s worlds. A timely consecutive same-cycle windup→recovery receipt can show **0.65s static residue**, labelled IMPACT CONFIRMED. It does not fire a late projectile, infer damage, award score, repeat per frame, or trigger for late join/gap/staleness/pause. Missed attack frames otherwise remain missed.
-- Exactly500 animated25-actor renders leave **105 frames /1,404 textures /97 fonts**,seven lane markers,72 particles and48 boss-cue textures unchanged. This establishes bounded WoW-object pools, not zero Lua allocations or native frame time.
+- Exactly500 animated25-actor renders leave **105 frames /1,521 textures /97 fonts**,seven lane markers,72 particles and48 boss-cue textures unchanged. This establishes bounded WoW-object pools, not zero Lua allocations or native frame time.
+
+## Building-detail correction before publication
+
+The owner requested earlier window/facade detail back while the release was still at its test gate, before any new tag/upload. The initial pipeline was stopped there; its inferred0.4.0 bump is retained and resumed without another bump. Historicalv0.2.0/v0.3.0 UI declared windows and trim, but wall/frame/pane/mullions shared ARTWORK ordering and damaged panes fell to0.23 alpha. These are visibility risks, not proof of the user's native rendering cause.
+
+Restored explicit ordering: wall BACKGROUND; shadows/brick seams BORDER; window frame ARTWORK0,lit panes ARTWORK1,glints ARTWORK2; mullions/sills/cornice OVERLAY. Damage retains0.65 pane alpha, distinct cracks and readable facade details. Added117 fixed textures (27 sills,27 vertical mullions,27 glints,36 brick seams), no new levels/assets/gameplay. Regression checks intact/damaged/destroyed floors, all nine floors at normal scale, layer/sublevel ordering and visible detail. Mock exporter now respects texture sublevels. Actual before/after patrol fixture inspected; native rendering remains unverified.
 
 ## Inspected visual previews
 

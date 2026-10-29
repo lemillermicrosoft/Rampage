@@ -41,7 +41,7 @@ const esc = s => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').repl
 const num = n => Number(n.toFixed(2));
 const fill = shape => `rgb(${[shape.r, shape.g, shape.b].map(n => Math.round(n * 255)).join(',')})`;
 const layers = { BACKGROUND: 0, BORDER: 1, ARTWORK: 2, OVERLAY: 3, HIGHLIGHT: 4 };
-capture.shapes.sort((a, b) => a.level - b.level || (layers[a.layer] ?? 2) - (layers[b.layer] ?? 2));
+capture.shapes.sort((a, b) => a.level - b.level || (layers[a.layer] ?? 2) - (layers[b.layer] ?? 2) || (a.sublevel ?? 0) - (b.sublevel ?? 0));
 const shapes = capture.shapes.map(s => {
   if (s.kind === 'rect') return `<rect x="${num(s.x)}" y="${num(s.y)}" width="${num(s.w)}" height="${num(s.h)}" fill="${fill(s)}" opacity="${num(s.alpha)}"/>`;
   const align = s.align === 'CENTER' ? 'middle' : s.align === 'RIGHT' ? 'end' : 'start';
