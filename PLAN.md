@@ -5,9 +5,9 @@ After v0.3.0's AI/Brawl improvement, make bosses visibly **move and attack**. Ke
 
 ## Isolation / release boundary
 - Worktree: `C:\Users\leroy\repos\Rampage-boss-motion`, feature branch for issue #7, based on `7c27d1b` / v0.3.0.
-- Primary checkout remains clean released main; actual anniversary AddOns junction still targets `C:\Users\leroy\repos\Rampage`.
-- Candidate is not installed. No forced reload, junction swap, SavedVariables edits, release/config/workflow/tooling changes or external audio/art.
-- New PR + unique ZIP only. No merge/tag/GitHub/CurseForge publication without fresh approval. TOC remains0.3.0 but R4 is incompatible with released v0.3.0/R3; all testers must use the same head-labelled candidate.
+- Owner authorized current PR #8 publication on October29,2026 at12:57 after independent review and correction of the stale-render residue edge.
+- During development primary remained clean v0.3.0. Authorized publication now advances primary main to the new release; actual anniversary AddOns junction stays pointed at `C:\Users\leroy\repos\Rampage`, with no forced reload or SavedVariables edits. The feature worktree and old archives remain preserved.
+- Existing regular release pipeline infers the version bump, synchronizes TOC/app and tests before tag/upload. Both machines must use the same new R4 release, incompatible with v0.3.0/R3. No release/config/workflow/tooling changes or external audio/art. Authorization applies to this moving-boss iteration only.
 
 ## Implemented playable scope
 - Shared pure boss position for movement, hit checks, AI pursuit and rendering. Ground patrol stays in lanes2–6 at ≤2 lanes per5s; no old fixed3–5 hitbox or body-contact damage.

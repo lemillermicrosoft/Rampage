@@ -395,14 +395,17 @@ function UI.bossSample(s,net,now)
         UI.bossVisual=v
     end
     local fresh=reset or v.state~=s or v.seq~=seq
+    local cap=2*(addon.Protocol.SNAPSHOT_INTERVAL or 1.25)
+    -- Measure the PREVIOUS sample before replacing its timestamp. Rendering can
+    -- stall without ever setting v.stale; delivery alone must not make that gap timely.
+    local priorAge=math.max(0,now-(v.sampleAt or now))
+    local wasStale=v.stale or (client and priorAge>cap)
     if fresh then
         v.sampleAt=net.lastSnapshot or now
         v.elapsed=0; v.frozen=false
     end
     local age=math.max(0,now-(v.sampleAt or now))
-    local cap=2*(addon.Protocol.SNAPSHOT_INTERVAL or 1.25)
     local stale=client and age>cap
-    local wasStale=v.stale
     if not client then v.elapsed=0
     elseif s.paused or net.combat then v.frozen=true
     elseif not v.frozen and not stale then v.elapsed=math.min(age,cap,math.max(0,motion.remaining or 0))

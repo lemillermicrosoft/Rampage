@@ -2,17 +2,19 @@
 
 **<Toast>'s pocket raid-break arcade.** Original monsters climb and smash a shared city, then flatten four fictional bosses. For **TBC Classic 2.5.6 / Interface 20506**. Inspired by classic climb-and-smash play, with original art and no affiliation with the original Rampage game's owners.
 
-## Roaming-boss playtest — unreleased R4 candidate
+## Roaming-boss release — R4
 
 Bosses now **really patrol, wind up and attack from their visible ground position** ([issue #7](https://github.com/lemillermicrosoft/Rampage/issues/7)). The same pure position helper drives model punch reach, AI pursuit and UI location: this is not cosmetic bobbing over the old fixed hitbox. Four original personalities use visible charge/throw/beam/stomp/barrage cues and forgiving recovery windows. Existing AI, health/KO and optional Brawl remain; **Co-op is still the default**.
 
-**This is an isolated, unreleased candidate based on v0.3.0.** TOC/runtime version remains0.3.0, but its **R4 protocol is incompatible with the released v0.3.0/R3**. Use the same head-labelled boss-motion ZIP on every test client; a matching displayed version alone is not sufficient. No merge/tag/GitHub/CurseForge release is authorized for this new feature.
+The owner authorized publishing the reviewed moving-boss build on October29,2026 at12:57. This release uses **R4, incompatible with v0.3.0/R3**. **Both machines/all participants must install the same new versioned release**, not an older release or head-labelled candidate ZIP. Download it from [GitHub releases](https://github.com/lemillermicrosoft/Rampage/releases) or [CurseForge](https://www.curseforge.com/wow/addons/rampage-four-more-bosses); CurseForge upload acceptance and public approval are separate.
 
-The owner's live WoW junction still points to the clean primary checkout on **released v0.3.0/R3** so both household machines can keep playing together. Merely reloading that installation **does not load this candidate**. No install/junction/reload/SavedVariables change is performed by this work. Choose a coordinated candidate test explicitly after review; otherwise keep both machines on the published release. Unique levels are later backlog, not included.
+Development stayed isolated until approval. Publication updates the primary linked checkout to the new release and leaves it there; it does not change the WoW junction, force a reload or edit SavedVariables. The owner can safely reload when ready after publication completes; the other machine needs the matching release ZIP. Old release/candidate archives are preserved. Unique levels remain later backlog, not included.
+
+Pre-publication review also fixed a narrow presentation edge: an unrendered stale sample can no longer trigger late confirmed-impact residue when the next world arrives. Previous sample age is checked before replacing its timestamp, retaining timely confirmation and the exact2.5s boundary.
 
 ## Try the new fun in one minute
 
-1. After choosing to test, install the **same head-labelled R4 candidate** on all test machines and safely `/reload` when you choose. Preserve the v0.3.0 release for rollback. If your AddOns folder is a junction to the primary release checkout, do not extract over it: arrange a separate test install first. The live linked checkout is deliberately unchanged.
+1. Install the **same new versioned R4 release** on both machines, then safely `/reload` when you choose. Preserve v0.3.0 for rollback. The owner's existing junction already points at the primary checkout that publication updates; do not extract over that junction or switch it to the development worktree.
 2. Type **`/rampage solo`** for default Co-op. Click **+ ADD AI** to add one helper. Click **PLAY • GRAB KEYS** and use **WASD/arrows + Space**. **Escape releases keys**.
 3. For friendly fighting, **Leave**, select **BRAWL**, then **Solo practice**, or use **`/rampage solo brawl`**. Add one AI and punch it from the same height within one lane. AI can hit you back, but still works on the city.
 4. Watch the boss **patrol → raise/charge → attack → recover**. Dodge early during its seven-second warning. Ranged attacks affect every height in marked columns; **Snack Tax's stomp is ground-only**. After the city falls, chase the boss and punch from within one lane on the ground; the gold bracket shows its reach.
@@ -96,6 +98,6 @@ node tests/ui-preview.cjs --scene boss-windup --output docs/previews/boss-windup
 node tests/ui-preview.cjs --scene boss-impact --output docs/previews/boss-impact-mock.svg
 ```
 
-**72 tests**:22 model,26 protocol,24 actual-TOC WoW/UI/input/audio mocks, retaining the stage-transition control-persistence regression. **9 Lua files** parse as Lua5.1 grammar; **Fengari executes Lua5.3 semantics**, not native WoW Lua. Single AI clears four moving bosses in100.8 simulated seconds; five AI in50.8s Co-op/85.2s Brawl; separate fixtures prove AI harm/KO. Source-derived mock previews are labelled **not WoW screenshots**. See [QA.md](QA.md) for what was actually checked and remaining native tests.
+**73 tests**:22 model,26 protocol,25 actual-TOC WoW/UI/input/audio mocks, retaining the stage-transition control-persistence regression. **9 Lua files** parse as Lua5.1 grammar; **Fengari executes Lua5.3 semantics**, not native WoW Lua. Single AI clears four moving bosses in100.8 simulated seconds; five AI in50.8s Co-op/85.2s Brawl; separate fixtures prove AI harm/KO. Source-derived mock previews are labelled **not WoW screenshots**. See [QA.md](QA.md) for what was actually checked and remaining native tests.
 
 Repository: https://github.com/lemillermicrosoft/Rampage

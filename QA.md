@@ -1,23 +1,24 @@
-# QA — isolated roaming-boss candidate (R4)
+# QA — roaming-boss release (R4)
 
 ## Build and installation boundary
 
-New issue #7 worktree `C:\Users\leroy\repos\Rampage-boss-motion`, based on released v0.3.0 commit `7c27d1b8900e37d855ec64539923697231469bc9`. This feature is **not published or installed**.
+Issue #7 / PR #8 was developed in isolated worktree `C:\Users\leroy\repos\Rampage-boss-motion` from v0.3.0 commit `7c27d1b8900e37d855ec64539923697231469bc9`. The owner authorized publication on October29,2026 at12:57. Independent review passed the original72 checks,9 grammar parses,audit0,28,000 off-grid round trips and all13 candidate archive hashes, identifying one narrow render-stall cue defect corrected before publication.
 
-Primary `C:\Users\leroy\repos\Rampage` remains clean main at that release. The actual anniversary-client junction `C:\Program Files (x86)\World of Warcraft\_anniversary_\Interface\AddOns\Rampage` still targets the primary checkout. **Reloading it loads v0.3.0/R3, not this candidate.** No junction, forced reload or external SavedVariables changes were performed.
+The existing pipeline assigns a new matching TOC/app version and runs full exact bumped-runtime tests before tagging/uploading. Primary `C:\Users\leroy\repos\Rampage` advances only to the approved release and stays there. The anniversary AddOns/Rampage junction remains pointed at that primary checkout; no junction change, forced reload or SavedVariables edits. The isolated worktree and old archives are preserved.
 
-Candidate TOC/app remains0.3.0, but its wire protocol is **R4**. All test participants need the same head-labelled boss-motion ZIP; matching displayed versions do not establish compatibility. Keep both household machines on released v0.3.0 unless explicitly coordinating a candidate install. Do not extract over the existing release junction. No merge/tag/GitHub/CurseForge publication is authorized for this new feature.
+**Both machines/all participants need the same new versioned R4 release**, incompatible with published v0.3.0/R3. Do not mix old releases or head-labelled playtest archives. After publication the owner can safely reload the linked release when ready; the other machine installs the matching ZIP. Do not extract over the owner's junction.
 
 Unique levels remain later backlog. No new map, body-contact damage, platform physics, service/dependency, or borrowed art/audio.
 
 ## Executed verification
 
-- Full integrated `npm test`: **72 checks** —22 model,26 protocol,24 actual-TOC mocked WoW/UI/input/audio tests. All prior gameplay/security/capacity/control checks retained; moving-threat fixtures now drive the sole authoritative `bossMotion` state.
+- Full integrated `npm test`: **73 checks** —22 model,26 protocol,25 actual-TOC mocked WoW/UI/input/audio tests. All prior gameplay/security/capacity/control checks retained; moving-threat fixtures now drive the sole authoritative `bossMotion` state.
 - `npm run check:lua51`: **9 files**, actual six TOC runtime modules plus three Lua test suites.
-- Final focused UI suite: **24/24**, including confirmed-impact residue and no catch-up/replayed damage.
+- Final focused UI suite: **25/25**, including confirmed-impact residue and no catch-up/replayed damage.
+- New actual-UI regression first failed against2ae1dd3: no renders while a warning sample aged4s, then a consecutive same-cycle recovery incorrectly confirmed residue. The fix measures prior sample age before overwriting its timestamp, combines it with remembered staleness, suppresses confirmation and clears stale baseline particles. Tests cover no intermediate render, >2.5s suppression, exact2.5s timely boundary, ordinary1.25s confirmation and existing rendered-stale/pause/replay/late-join guards. This changes no gameplay, wire schema, latency or damage behavior.
 - `npm ci --ignore-scripts` in the isolated worktree: five locked development packages, zero audit findings; no manifest changes or global installation.
 - `npm audit --audit-level=moderate`: **zero vulnerabilities**. `git diff --check`: clean.
-- Input.lua, Rampage.lua, Sound.lua and TOC untouched from released v0.3.0. No release script/config/workflow/installed-skill changes.
+- Input.lua and Sound.lua untouched from v0.3.0; adapter code unchanged except the release pipeline's version assignment. TOC version is synchronized by that same pipeline. No release script/config/workflow/installed-skill changes.
 
 Execution is **Fengari0.1.5 Lua5.3 semantics**, with separate luaparse0.3.1 Lua5.1 grammar. These are not native Lua5.1/WoW API/taint or live multiplayer certifications.
 
@@ -58,7 +59,7 @@ Human drivers chase from their delayed snapshots, not teleported omniscient posi
 
 Unchanged limits:8msg/s burst10,700 chargedB/s burst1,000 (16-byte allowance/message),queue128,three assemblies×three fragments,6s expiry;1.25s worlds,1s name carousel,90s join/20s world/35s guest timeouts. The three-second blackout fixture still lets a client see a warning and legally dodge. **Arbitrary loss can hide warnings.** Seven seconds exceeds the measured4s gap, not every possible delay. No prediction/precision-PvP claim.
 
-## Actual UI/input/audio mock:24 checks
+## Actual UI/input/audio mock:25 checks
 
 Real TOC loading; existing combat, keyboard propagation/capture, chat/focus/modifier/Escape/hide/leave/long-stall/physical-key-up safety, mouse fallback, saved variables, optional audio and capacity/consent controls retained.
 
@@ -82,7 +83,7 @@ SVGs are underdocs/previews; final review PNGs under `artifacts/rampage/boss-mot
 
 ## Manual playtest outstanding
 
-Only after explicitly choosing and installing the same candidate on all test machines:
+Use the same new versioned release on all participating machines:
 
 - [ ] `/rampage solo`→Add AI→PLAY. Watch shielded patrol,7s windup/attack,then5s recovery. No body-contact damage.
 - [ ] Flatten city; chase and hit inside the actual boss bracket, miss outside even in old lanes3–5. AI also chases and finishes.
@@ -93,6 +94,6 @@ Only after explicitly choosing and installing the same candidate on all test mac
 - [ ] Brawl consent, human/AI hits/KO, spectator immunity and bot eviction; scale only after two-client response is acceptable.
 - [ ] Native fonts/scaling/taint/taskbar focus/audio; optional BM off/mute/None unchanged. Restore matching publishedv0.3.0 on both machines if rolling back.
 
-## Handoff gate
+## Authorized publication handoff
 
-New tested PR and head-labelled portable ZIP only, with per-entry hashes. **Not installed/not published.** Primary release and older archives preserved. Parent independently reviews; the user chooses whether and when to test. Fresh owner approval is required to merge/tag/publish; unique levels remain future work.
+Publish the reviewed PR with the render-stall fix through the existing regular release pipeline. Verify exact versioned archive/per-entry hashes, downloaded GitHub asset, tag/main/PR/issue state and CurseForge upload receipt separately from moderation/public visibility. Leave primary clean on the new release with its junction unchanged. Preserve the isolated worktree and older archives. This authorization covers current moving bosses only; unique levels remain future work.

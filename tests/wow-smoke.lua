@@ -394,6 +394,27 @@ function runWoWSmoke()
         assert(not ui.bossVisual.confirmed); eq(s.players[1].hp,hp)
         net.state,net.mode,net.inSeq,net.lastSnapshot=oldState,oldMode,oldSeq,oldSnap; ui.resetBossVisuals()
     end)
+    check("WoW mock: unrendered stale sample suppresses late residue while exact-age boundary stays timely", function()
+        local net=app.net
+        local oldState,oldMode,oldSeq,oldSnap=net.state,net.mode,net.inSeq,net.lastSnapshot
+        local s=Addon.Model.new(); Addon.Model.addPlayer(s,1); Addon.Model.start(s)
+        net.state,net.mode=s,"client"
+        local function sample(gap)
+            net.inSeq,net.lastSnapshot=10,now; s.time=20
+            bossFixture(s,"windup",0.8,5,5,{3},7); ui.resetBossVisuals(); ui.render()
+            ui.burst(100,100,1,"hit")
+            now=now+gap -- deliberately NO intermediate render to set v.stale
+            net.inSeq,net.lastSnapshot=11,now; s.time=21.25
+            bossFixture(s,"recover",4.8,5,5,{},7); ui.render()
+            return ui.bossVisual.confirmed
+        end
+        assert(not sample(4),"stalled rendering must not confirm a four-second-old warning")
+        for _,p in ipairs(ui.particles) do assert(not p.start,"stale baseline particles must clear") end
+        assert(sample(2.5),"exact 2.5-second age cap remains timely")
+        assert(not sample(2.501),"strictly over cap suppresses without an intermediate render")
+        assert(sample(1.25),"ordinary consecutive snapshot confirmation remains")
+        net.state,net.mode,net.inSeq,net.lastSnapshot=oldState,oldMode,oldSeq,oldSnap; ui.resetBossVisuals()
+    end)
     check("WoW mock: snapshot gaps, epoch, replay and hidden resets cannot catch up old boss FX", function()
         local net=app.net
         local oldState,oldMode,oldSeq,oldSnap=net.state,net.mode,net.inSeq,net.lastSnapshot
