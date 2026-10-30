@@ -1,5 +1,9 @@
 # Rampage R4 protocol and engine contract
 
+## Hit-feedback candidate compatibility note
+
+The issue #10 presentation candidate is **unreleased** and leaves Model.lua and Protocol.lua unchanged from publishedv0.4.0. It remains R4-compatible with that release and sends no extra hit/damage acknowledgements. Feedback.lua observes existing authoritative HP deltas locally: exact host/solo local actions can be attributed to YOU; remote target losses are TEAM totals, not individual attacker receipts. Missing/gapped/stale worlds may suppress cosmetic feedback. R4 carries no bot incarnation counter, so same-ID remove/readd entirely between snapshots remains indistinguishable. These presentation limits do not alter the wire contract below or authorize publishing this new candidate.
+
 R4 is intentionally incompatible with **R1, R2 and R3**, including publishedv0.3.0/R3. The approved moving-boss release receives a new matching TOC/runtime version through the release pipeline; every multiplayer participant needs the same new versioned R4 release, not an older candidate. Prefix remains `ToastRampage1`; every payload begins `R4`. Runtime is self-contained Lua 5.1: no serialized Lua, `loadstring`, external AI, services or packages. Addon AI is deterministic local rules executed **only by the host/solo authority**.
 
 ## Public model/UI contract

@@ -1,5 +1,5 @@
 -- WoW adapter only: group identity, addon channel, persistence and combat safety.
--- TOC order: Model.lua, Protocol.lua, Input.lua, Sound.lua, UI.lua, Rampage.lua.
+-- TOC order: Model.lua, Protocol.lua, Feedback.lua, Input.lua, Sound.lua, UI.lua, Rampage.lua.
 local addonName, addon = ...
 local app = { now = function() return GetTime() end }
 app.VERSION = "0.4.0" -- Kept in sync with the TOC by the release packager.
@@ -83,7 +83,9 @@ local function initialize()
                 else app.input:syncPhase() end
             end
             if app.sound then app.sound:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
+            if app.feedback then app.feedback:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
         end })
+    app.feedback = addon.Feedback.create(app)
     app.sound = addon.Sound.create(app)
     app.refreshRoster()
     app.net:setCombat(InCombatLockdown())
@@ -162,6 +164,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         RampageDB.best = math.floor(RampageDB.best)
         RampageDB.useBlasterMaster = RampageDB.useBlasterMaster == true
         RampageDB.muted = RampageDB.muted == true
+        RampageDB.reducedMotion = RampageDB.reducedMotion == true
         SLASH_RAMPAGE1 = "/rampage"; SlashCmdList.RAMPAGE = slash
         frame:UnregisterEvent("ADDON_LOADED")
         if IsLoggedIn and IsLoggedIn() then initialize() end
@@ -177,6 +180,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         end
     elseif event == "PLAYER_LEAVING_WORLD" then
         if app.input then app.input:release("Leaving world — keys released") end
+        if app.feedback then app.feedback:observe(false) end
         app.persist()
     elseif event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
         addon.UI.fit()
@@ -196,6 +200,7 @@ frame:SetScript("OnUpdate", function(_, elapsed)
     if elapsedNet >= 0.05 then
         app.net:tick(elapsedNet); elapsedNet = 0; app.persist()
         if app.sound then app.sound:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
+        if app.feedback then app.feedback:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
     end
     if elapsedUI >= 0.033 then elapsedUI = 0; addon.UI.render() end
 end)

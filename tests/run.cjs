@@ -10,11 +10,15 @@ if (!toc.includes('## Interface: 20506')) throw new Error('Wrong TBC interface')
 const tocVersion = toc.match(/^## Version:\s*(\S+)/m)?.[1];
 if (!tocVersion || !/^\d+\.\d+\.\d+$/.test(tocVersion)) throw new Error('Invalid TOC release version');
 if (runtime.some(x => !x.endsWith('.lua') || !fs.existsSync(path.join(root, x)))) throw new Error('Missing TOC file');
-const suites = { model: 'tests/model.lua', protocol: 'tests/protocol.lua', wow: 'tests/wow-smoke.lua' };
+const suites = { model: 'tests/model.lua', protocol: 'tests/protocol.lua', feedback: 'tests/feedback.lua', wow: 'tests/wow-smoke.lua' };
+const pureRuntime = runtime.filter(x => ['Model.lua', 'Protocol.lua', 'Feedback.lua'].includes(x));
+if (pureRuntime.join(',') !== 'Model.lua,Protocol.lua,Feedback.lua' || runtime.indexOf('Feedback.lua') > runtime.indexOf('Input.lua')) {
+  throw new Error('Feedback must load after Model/Protocol and before Input/UI in the real TOC');
+}
 const suite = process.argv.find(x => x.startsWith('--suite='))?.split('=')[1];
 if (suite && !suites[suite]) throw new Error('Unknown suite: ' + suite);
 const tests = suite ? [suites[suite]] : Object.values(suites);
-const selectedRuntime = suite && suite !== 'wow' ? runtime.slice(0, 2) : runtime;
+const selectedRuntime = suite && suite !== 'wow' ? pureRuntime : runtime;
 for (const file of [...selectedRuntime, ...tests]) {
   luaparse.parse(fs.readFileSync(path.join(root, file), 'utf8'), { luaVersion: '5.1' });
   console.log(`Lua 5.1 syntax OK: ${file}`);
@@ -46,7 +50,7 @@ execute(`
     assert(actual == expected, (message or 'values differ') .. ': expected ' .. tostring(expected) .. ', got ' .. tostring(actual))
   end
 `, '@test-bootstrap');
-for (const file of runtime.slice(0, 2)) execute(moduleSource(file), '@load-' + file);
+for (const file of pureRuntime) execute(moduleSource(file), '@load-' + file);
 for (const file of tests.filter(x => x !== suites.wow)) execute(fs.readFileSync(path.join(root, file), 'utf8'), '@' + file);
 if (tests.includes(suites.wow)) {
   // Smoke test defines API mocks before exercising the real TOC load order in a fresh addon namespace.

@@ -2,27 +2,36 @@
 
 **<Toast>'s pocket raid-break arcade.** Original monsters climb and smash a shared city, then flatten four fictional bosses. For **TBC Classic 2.5.6 / Interface 20506**. Inspired by classic climb-and-smash play, with original art and no affiliation with the original Rampage game's owners.
 
-## Roaming-boss release — R4
+## Hit-feedback playtest — unreleased, compatible R4
 
-Bosses now **really patrol, wind up and attack from their visible ground position** ([issue #7](https://github.com/lemillermicrosoft/Rampage/issues/7)). The same pure position helper drives model punch reach, AI pursuit and UI location: this is not cosmetic bobbing over the old fixed hitbox. Four original personalities use visible charge/throw/beam/stomp/barrage cues and forgiving recovery windows. Existing AI, health/KO and optional Brawl remain; **Co-op is still the default**.
+This iteration makes damage easier to **feel and understand** ([issue #10](https://github.com/lemillermicrosoft/Rampage/issues/10)): brief monster-local recoil, readable HP-loss numbers/trails, confirmed contact sparks, persistent boss HP/shield/range guidance, and a **Reduced Motion** toggle. It does not rebalance gameplay or add levels.
 
-The owner authorized publishing the reviewed moving-boss build on October29,2026 at12:57. This release uses **R4, incompatible with v0.3.0/R3**. **Both machines/all participants must install the same new versioned release**, not an older release or head-labelled candidate ZIP. Download it from [GitHub releases](https://github.com/lemillermicrosoft/Rampage/releases) or [CurseForge](https://www.curseforge.com/wow/addons/rampage-four-more-bosses); CurseForge upload acceptance and public approval are separate.
+**This is a new, unreleased candidate based on v0.4.0**, not a new CurseForge/GitHub release. Displayed TOC/app version stays0.4.0. **Model.lua and Protocol.lua are unchanged from v0.4.0; wire protocol remains R4**, with no new messages or budget increase. It can communicate with v0.4.0/R4, but use the same head-labelled feedback candidate on testers who want these visuals. Older v0.3.0/R3 is incompatible.
 
-Development stayed isolated until approval. Publication updates the primary linked checkout to the new release and leaves it there; it does not change the WoW junction, force a reload or edit SavedVariables. The owner can safely reload when ready after publication completes; the other machine needs the matching release ZIP. Old release/candidate archives are preserved. Unique levels remain later backlog, not included.
+The primary WoW-linked checkout stays clean on published **v0.4.0**. Its junction is unchanged; simply reloading that installation **does not load this candidate**. No forced reload, install or external SavedVariables change is performed. Keep the matching release on household machines until choosing a coordinated playtest; do not extract over the owner's primary-checkout junction. Earlier worktrees/releases/candidates remain preserved. A new approval is required to merge/tag/publish; previous release approvals are consumed.
 
-Pre-publication review also fixed a narrow presentation edge: an unrendered stale sample can no longer trigger late confirmed-impact residue when the next world arrives. Previous sample age is checked before replacing its timestamp, retaining timely confirmation and the exact2.5s boundary.
-
-The requested building detail is restored too: clear lit panes, crossbars, sills, roof trim and facade brick seams. Explicit texture layers/sublevels keep walls behind panes and trim in the native renderer; damaged windows remain visible rather than nearly disappearing. This preserves the earlier warm building style, not new level themes.
+Moving bosses, shared actual hitbox/AI, seven-second warnings, the prior stale-render cue fix, restored building windows/trim and input-mode persistence are retained. **Co-op remains the default**, Brawl is optional, unique levels remain later work.
 
 ## Try the new fun in one minute
 
-1. Install the **same new versioned R4 release** on both machines, then safely `/reload` when you choose. Preserve v0.3.0 for rollback. The owner's existing junction already points at the primary checkout that publication updates; do not extract over that junction or switch it to the development worktree.
+1. After review and choosing to test, install the **head-labelled hit-feedback ZIP** in a coordinated test install and safely `/reload` when ready. Preserve v0.4.0 for rollback. Do not extract over the owner's existing junction; it deliberately still targets the stable release.
 2. Type **`/rampage solo`** for default Co-op. Click **+ ADD AI** to add one helper. Click **PLAY • GRAB KEYS** and use **WASD/arrows + Space**. **Escape releases keys**.
 3. For friendly fighting, **Leave**, select **BRAWL**, then **Solo practice**, or use **`/rampage solo brawl`**. Add one AI and punch it from the same height within one lane. AI can hit you back, but still works on the city.
 4. Watch the boss **patrol → raise/charge → attack → recover**. Dodge early during its seven-second warning. Ranged attacks affect every height in marked columns; **Snack Tax's stomp is ground-only**. After the city falls, chase the boss and punch from within one lane on the ground; the gold bracket shows its reach.
 5. In a party/raid, open `/rampage`, choose Co-op or Brawl and **HOST LOBBY**. Add AI if desired, then **START GAME**. Friends explicitly click **JOIN CO-OP**, **JOIN BRAWL**, or **SPECTATE**.
 
 A host can choose mode only in lobby/victory **with no other real participants joined**. No silent mid-match or replay conversion into PvP. Start a new lobby or have guests leave before changing mode. Spectators switching to Brawl see **JOIN BRAWL**; a generic chat `/rampage join` or `/rampage play` does not silently opt them into PvP.
+
+## What the feedback means
+
+- **Incoming:** `YOU -20 HP` means your health actually fell by20. A short warm tint, at most0.28s damped sprite recoil and an amber health-loss trail reinforce it. Nearby monsters react more subtly. No world camera, window or authoritative hitbox moves.
+- **Outgoing:** `YOU HIT -1 HP` over a building/boss is an exact confirmed host/solo local action. A swing into empty space only shows the fist—no contact sparks or damage number. Building HP damage is **not** the10 fame awarded for a floor hit, nor boss damage the15 fame awarded for a boss hit.
+- **Remote:** `TEAM HIT -3 HP` is total observed target HP loss between timely worlds, potentially several hits from anyone/AI. R4 has no per-attacker receipts, so the client never claims those hits were yours. A successful input send proves only swing intention. This does not reduce1.25s network feedback delay.
+- **Boss clarity:** HP/maxHP remains visible while shielded or exposed. The readout shows remaining floors to destroy, and ground/range guidance uses the same moving-boss helper as hit checks. Host/solo air punches get throttled known explanations; remote guidance/bracket is explicitly **sampled/estimated**, not a host rejection acknowledgement. In Brawl, the highlighted eligible rival is the lowest slot at the same height within one lane; city/boss damage can also occur on that punch under the existing rules.
+- **Reduced Motion:** toggle at bottom right. Saves through ordinary addon settings; immediately removes recoil, decorative bob/bounce, number rise and moving particles. Useful static numbers, health trails, highlights and essential boss telegraph poses remain. Gameplay movement and damage do not change.
+- New-session/reopen/stage/replay/role/known slot replacement, pause/combat, expired/duplicate/reordered/gapped/stale samples rebaseline without catch-up effects. The previous arrival's age is checked before replacing its timestamp, even after a render stall;2.5s is the inclusive cutoff. Heals/respawns do not become damage. Repeated renders never repeat a hit or award score.
+
+Feedback is deliberately bounded:32 queued receipts, at most8 nonlocal receipts per undrained batch,12 reused number labels with local/boss priority, existing72 pooled particles. Labels can combine short-lived losses; they are not a fabricated hit-by-hit combat log. Under heavy load some nonlocal decoration is omitted. R4 cannot distinguish a same-ID bot removed/readded entirely between snapshots; visible removals, bot-ID changes and known membership generations do reset feedback.
 
 ## Rules and balance
 
@@ -73,7 +82,7 @@ Combat hides the window. Returning can restore the previous window but never rec
 
 **Local BM** remains **OFF by default**, plus independent **Mute Rampage**. It uses separately installed `BlasterMaster_GetSfxPath` mappings (`crit`, `combatStart`, `levelUp`), honors None/mute/provider variants, checks playback success, and never copies sound files or changes global volume. Local hurt cues are rare/throttled; spectators hear only major transitions. No 25-monster network sound chorus or catch-up burst.
 
-Original warm city and creatures show HP, hurt flashes, immunity, KO countdowns and AI/KO labels. Seven fixed lane markers,72 pooled particles and48 boss-cue textures handle warnings/attacks/destruction. Buttons retain hover/pressed/disabled/selected states. The900×660 window fits down to available space. Pools remain **105 frames /1,521 textures /97 fonts** after exactly500 animated25-actor renders; this is bounded WoW-object evidence, not zero Lua allocations or native frame-time proof.
+Original warm city and creatures show HP, hurt flashes, immunity, KO countdowns and AI/KO labels. Seven fixed lane markers,72 pooled particles and48 boss-cue textures handle warnings/attacks/destruction. Buttons retain hover/pressed/disabled/selected states. The900×660 window fits down to available space. Pools remain **106 frames /1,586 textures /111 fonts** after exactly500 animated25-actor renders; this is bounded WoW-object evidence, not zero Lua allocations or native frame-time proof.
 
 ## Network and limitations
 
@@ -95,11 +104,13 @@ npm test
 npm run check:lua51
 npm audit --audit-level=moderate
 node tests/run.cjs --suite=wow
-node tests/ui-preview.cjs --scene boss-patrol --output docs/previews/boss-patrol-mock.svg
-node tests/ui-preview.cjs --scene boss-windup --output docs/previews/boss-windup-mock.svg
-node tests/ui-preview.cjs --scene boss-impact --output docs/previews/boss-impact-mock.svg
+node tests/run.cjs --suite=feedback
+node tests/ui-preview.cjs --scene hit-before --output docs/previews/hit-before.svg
+node tests/ui-preview.cjs --scene hit-impact --output docs/previews/hit-impact.svg
+node tests/ui-preview.cjs --scene hit-settle --output docs/previews/hit-settle.svg
+node tests/ui-preview.cjs --scene hit-reduced --output docs/previews/hit-reduced.svg
 ```
 
-**74 tests**:22 model,26 protocol,26 actual-TOC WoW/UI/input/audio mocks, retaining the stage-transition control-persistence regression. **9 Lua files** parse as Lua5.1 grammar; **Fengari executes Lua5.3 semantics**, not native WoW Lua. Single AI clears four moving bosses in100.8 simulated seconds; five AI in50.8s Co-op/85.2s Brawl; separate fixtures prove AI harm/KO. Source-derived mock previews are labelled **not WoW screenshots**. See [QA.md](QA.md) for what was actually checked and remaining native tests.
+**119 tests**:22 model,26 protocol,39 feedback-state,32 actual-TOC WoW/UI/input/audio mocks, retaining all74 baseline checks including stage controls, stale-residue and building details. **11 Lua files** parse as Lua5.1 grammar; **Fengari executes Lua5.3 semantics**, not native WoW Lua. Single AI clears four moving bosses in100.8 simulated seconds; five AI in50.8s Co-op/85.2s Brawl; separate fixtures prove AI harm/KO. Source-derived mock previews are labelled **not WoW screenshots**. See [QA.md](QA.md) for what was actually checked and remaining native tests.
 
 Repository: https://github.com/lemillermicrosoft/Rampage

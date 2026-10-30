@@ -71,6 +71,7 @@ function Input.create(app, root)
     end
     function self:action(action)
         if not self:canPlay() then return false end
+        if app.feedback then return app.feedback:act(action) end
         return app.net:action(action)
     end
     function self:update(elapsed)

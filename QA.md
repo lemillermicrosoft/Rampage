@@ -1,105 +1,99 @@
-# QA — roaming-boss release (R4)
+# QA — hit-feedback playtest candidate
 
-## Build and installation boundary
+## Scope and installation boundary
 
-Issue #7 / PR #8 was developed in isolated worktree `C:\Users\leroy\repos\Rampage-boss-motion` from v0.3.0 commit `7c27d1b8900e37d855ec64539923697231469bc9`. The owner authorized publication on October29,2026 at12:57. Independent review passed the original72 checks,9 grammar parses,audit0,28,000 off-grid round trips and all13 candidate archive hashes, identifying one narrow render-stall cue defect corrected before publication.
+New issue #10, isolated worktree `C:\Users\leroy\repos\Rampage-hit-feedback`, based on released v0.4.0 commit `5ec13435deda1244c9bfbe63735777fe4af2de7b`. This iteration is **not installed or published**. Primary `C:\Users\leroy\repos\Rampage` remains clean main at that release; the actual anniversary-client `Interface/AddOns/Rampage` junction still targets primary. Merely reloading it does not load this candidate. No junction switch, forced reload, external SavedVariables editing or old-artifact overwrite.
 
-The existing pipeline assigns a new matching TOC/app version and runs full exact bumped-runtime tests before tagging/uploading. Primary `C:\Users\leroy\repos\Rampage` advances only to the approved release and stays there. The anniversary AddOns/Rampage junction remains pointed at that primary checkout; no junction change, forced reload or SavedVariables edits. The isolated worktree and old archives are preserved.
-
-**Both machines/all participants need the same new versioned R4 release**, incompatible with published v0.3.0/R3. Do not mix old releases or head-labelled playtest archives. After publication the owner can safely reload the linked release when ready; the other machine installs the matching ZIP. Do not extract over the owner's junction.
-
-Unique levels remain later backlog. No new map, body-contact damage, platform physics, service/dependency, or borrowed art/audio.
+New PR and head-labelled ZIP only. Previous publishing approvals were consumed by v0.4.0. No merge/tag/GitHub/CurseForge release, moderation polling, Discord/configuration changes, new levels or balance changes.
 
 ## Executed verification
 
-- Full integrated `npm test`: **74 checks** —22 model,26 protocol,26 actual-TOC mocked WoW/UI/input/audio tests. All prior gameplay/security/capacity/control checks retained; moving-threat fixtures now drive the sole authoritative `bossMotion` state.
-- `npm run check:lua51`: **9 files**, actual six TOC runtime modules plus three Lua test suites.
-- Final focused UI suite: **26/26**, including confirmed-impact residue, no catch-up/replayed damage and explicit restored building-detail layering.
-- New actual-UI regression first failed against2ae1dd3: no renders while a warning sample aged4s, then a consecutive same-cycle recovery incorrectly confirmed residue. The fix measures prior sample age before overwriting its timestamp, combines it with remembered staleness, suppresses confirmation and clears stale baseline particles. Tests cover no intermediate render, >2.5s suppression, exact2.5s timely boundary, ordinary1.25s confirmation and existing rendered-stale/pause/replay/late-join guards. This changes no gameplay, wire schema, latency or damage behavior.
-- `npm ci --ignore-scripts` in the isolated worktree: five locked development packages, zero audit findings; no manifest changes or global installation.
-- `npm audit --audit-level=moderate`: **zero vulnerabilities**. `git diff --check`: clean.
-- Input.lua and Sound.lua untouched from v0.3.0; adapter code unchanged except the release pipeline's version assignment. TOC version is synchronized by that same pipeline. No release script/config/workflow/installed-skill changes.
+- Full `npm test`: **119/119** —22 model,26 protocol,39 feedback-state,32 actual-TOC mocked WoW/UI/input/audio tests. All74 baseline checks retained, including control persistence, building layers and the no-render stale-impact guard.
+- Final focused UI suite: **32/32** after explicit YOU HIT/TEAM HIT labels and preview metadata correction.
+- `npm run check:lua51`: **11/11 Lua files**, seven TOC runtime modules and four test suites.
+- Isolated `npm ci --ignore-scripts`: five existing locked development packages, no manifest or global install changes. `npm audit --audit-level=moderate`: **0 vulnerabilities**.
+- `git diff --check`: clean. `Model.lua`, `Protocol.lua`, `Sound.lua`: unchanged from v0.4.0. Version stays0.4.0, interface20506.
+- An in-memory same-input/model/UI regression was run against immutable v0.4.0 and the candidate. At lane1, punching air changed no floor/boss HP. **Old UI failed** the no-contact-sparks assertion; **candidate passed**. Neither source tree was modified by the probe. Evidence: `artifacts/rampage/hit-feedback/legacy-contact-regression.json`.
 
-Execution is **Fengari0.1.5 Lua5.3 semantics**, with separate luaparse0.3.1 Lua5.1 grammar. These are not native Lua5.1/WoW API/taint or live multiplayer certifications.
+Execution is **Fengari0.1.5 Lua5.3 semantics**, with separate luaparse0.3.1 Lua5.1 grammar. Mock API/render evidence is not native WoW graphics, input/taint or live multiplayer proof.
 
-## Model:22 checks
+## Feedback-state evidence:39 tests
 
-Baseline city/movement/climbing/shared destruction, four bosses/replay/score, default Co-op no friendly fire, Brawl mutual hits/range/cooldown, health/KO/respawn/immunity/protection/pause all retained. Added:
+`Feedback.lua` uses immutable numeric HP samples; never alters model state, applies damage, awards fame or sends a new packet. `Input.action` gains one delegation line; the wrapper calls existing `net:action` exactly once and preserves its result. Synchronous changed callbacks are deferred so an exact local result is not consumed/relabelled as TEAM.
 
-- Actual fractional patrol in lanes2–6, reflected route bounds, ≤2 lanes per5 seconds, deterministic partitioned ticks.
-- Shared `bossPosition` / `bossInReach` for model punches and AI chase; exposed ground distance≤1, shield unchanged. Old fixed3–5 hitbox no longer works when the boss moves away. No body-contact damage.
-- Every boss phase freezes during host combat; the known-segment helper never advances a phase. Stage/replay resets position/cycle/AI action clock and clears old hazards.
-- Seven-second warning locks origin/lanes; once-only35 damage impact;0.5s attack;5s stationary recovery. At least four safe lanes.
-- Ranged columns affect all heights; Snack Tax stomp affects ground only. Knockback uses the actual boss origin, not fixed lane4.
-- Nearest eligible target pursuit with deterministic lowest-slot ties; protected/KO actors excluded.
-- One AI clears four moving bosses in **100.8 game seconds**; five AI in **50.8s Co-op /85.2s Brawl**, with movement observed on all stages. Separate fixtures prove AI damage/KO and legal warning avoidance.
+Tests cover:
+- Score and punch counters cannot fabricate contact. Exact host/solo building/boss damage says YOU, using HP loss rather than10/15 fame.
+- Unrelated human/AI deltas are observed before local action and cannot acquire local credit. Client sends produce only numberless swing intention; remote target loss is TEAM aggregate.
+- Positive incoming HP deltas, local priority, healing/respawn suppression, KO/reset generations, final same-stage boss hit and no stale terminal replay.
+- Actual member generation, role sequence, separate name/mapping stream, observed bot identity/removal, local bot order and slot reuse. Missing/mismatched member evidence suppresses actor deltas.
+- Join/reopen/session/stage/replay/epoch/role/local-slot changes, pause/combat and synchronous hidden callbacks baseline silently.
+- Duplicate/reordered/gapped worlds, old model time, stale current/previous arrival, blackouts, render loops and no-intermediate-render stalls. **Previous arrival age is measured before timestamp replacement.** Exactly2.5s is allowed; greater than2.5s is suppressed.
+- Throttled known local shield/ground/range/cooldown explanations, sampled client guidance, actual moving-boss reach helper and Brawl lowest eligible slot.
+- Queue max32, at most8 nonlocal receipts per undrained batch, local/boss priority, expired queue removal and immutable snapshots under in-place model mutation.
 
-## Network:26 checks
+**R4 limitation:** it has no bot incarnation counter or per-hit source history. A same-ID bot removed and readded entirely between two snapshots is not distinguishable on a client. Visible removals/ID changes and known human admission generations are handled. Remote HP changes can combine hits and heals, so feedback reports net observed loss, not an invented complete combat history. No extra protocol complexity was introduced for cosmetic precision.
 
-Existing host/actual-sender/roster/session/generation/epoch/sequence/role authority, spectator immunity/read-only behavior, Co-op/Brawl consent at join and victory, capacities/bot eviction, malformed/stale/future input, challenge handshake, reconnection/liveness and pre-impact combat protection remain.
+## Actual UI evidence:32 tests
 
-R4 adds an eleven-character boss record replacing the nine-character hazard: cycle ID, phase, target mask, remaining deciseconds and source/destination lanes. Every phase of all four bosses round-trips. Strict phase/clock/route/mask constraints reject bad worlds atomically; R1–R3 are rejected. Mid-patrol late join reconstructs position; decode/client tick never replays impact damage. Off-grid rounding adds at most0.04 lane positional quantization.
+Existing26 release UI/input/audio checks retained; six added integrated feedback cases exercise the real TOC, adapter, Input, model and new observer:
 
-### Measured, not estimated
+1. Local incoming loss aggregates into `YOU -N HP`, with0.28s damped recoil, warm single tint and amber loss trails. Repeated renders do not repeat it; expiry restores base transforms without drift; heals/respawn are silent.
+2. Air swings show a fist only; successful building/boss actions produce actual contact sparks/target response and `YOU HIT -N HP`. Boss numbers reflect HP, not fame; numeric HP remains visible when shielded/exposed and at the final hit.
+3. Remote timely total loss says `TEAM HIT -N HP`, not YOU. Duplicate/gap/stalled deliveries cannot replay damage presentation.
+4. Reduced Motion persists in normal addon settings, immediately restores offsets, suppresses decorative recoil/bob/bounce/number rise/particles and retains static useful numbers/trails/highlights. Hide, KO, phase reset and combat clean up effects and transforms.
+5. Brawl target highlight follows the unchanged lowest eligible same-height adjacent slot. Client guidance/bracket is explicitly sampled/estimated, not an exact host promise.
+6. Member/slot generation changes clear previous-occupant visual state; combat resets active recoil/labels/trails.
 
-Every emitted broadcast independently fans out to other real nodes. Byte/message/queue/assembly bounds are checked during simulation.
+All original keyboard lifecycle protections remain: selected keyboard/mouse survives ordinary intermission/stage changes; held inputs require release/fresh press; Escape, chat/edit focus, close/Leave, modifiers/focus interruption and real combat release without auto-recapture. No restricted propagation mutation in combat. Sound.lua and provider/mute/defaultOFF behavior are unchanged.
 
-| Fixture | Observed |
-| --- | --- |
-| Maximum valid world | **494 assembled body bytes**,3 fragments,**593 payload /641 charged bytes**,largest packet**209/255**,fragment max176 |
-| Forty96-byte-name participants | all admitted in **41.3s**,simultaneous reconnect converges |
-| Maximum-name host | **4.20msg/s,618.7 payloadB/s,685.9 chargedB/s**,queue53/128,world gap1.5s |
-| Mixed run | **82.9 simulated seconds**,40 real nodes =20 human actors+20 spectators,plus5 AI;four bosses/replay/combat |
-| Disruption | deterministic **4.35% per-recipient loss**,0–300ms jitter/reordering/duplicates;exact final convergence |
-| Mixed host | **3.46msg/s,457.8 payloadB/s,513.1 chargedB/s** |
-| Whole group | **36.00msg/s,1,375.9 payloadB/s**,402 guest heartbeats |
-| Mixed queue/world gap | **41/128**,**4.0s** maximum |
+### Bounded presentation
 
-Human drivers chase from their delayed snapshots, not teleported omniscient positions. Both40-member fixtures assert measured host averages under700 chargedB/s and8msg/s, alongside per-send token-bucket checks. No bandwidth increase.
+- **12 reusable number labels**, local incoming and boss readability reserved; remaining labels reused or omitted rather than flooded. Short-lived labels may aggregate nearby receipts without mixing YOU and TEAM attribution.
+- Existing72 particles and48 boss telegraph textures. No per-frame frame/font/texture creation.
+- Exactly500 renders with25 actors and actual changing HP: **106 frames /1,586 textures /111 font strings**, unchanged after the loop. This is bounded WoW-object evidence, not zero Lua allocations or native frame-time benchmarking.
+- Recoil affects only draw coordinates; model positions/hitboxes never move. One damped pulse rather than repeating screen shake. Health immunity uses steady translucency rather than rapid flashing.
+- No UIParent/world camera movement. Useful contact tint/trails remain with Reduced Motion; gameplay movement and essential telegraph poses remain.
 
-Unchanged limits:8msg/s burst10,700 chargedB/s burst1,000 (16-byte allowance/message),queue128,three assemblies×three fragments,6s expiry;1.25s worlds,1s name carousel,90s join/20s world/35s guest timeouts. The three-second blackout fixture still lets a client see a warning and legally dodge. **Arbitrary loss can hide warnings.** Seven seconds exceeds the measured4s gap, not every possible delay. No prediction/precision-PvP claim.
+## R4 compatibility and network evidence
 
-## Actual UI/input/audio mock:26 checks
+Model/Protocol bytes are unchanged from the release:
 
-Real TOC loading; existing combat, keyboard propagation/capture, chat/focus/modifier/Escape/hide/leave/long-stall/physical-key-up safety, mouse fallback, saved variables, optional audio and capacity/consent controls retained.
+- Model SHA256 `8A3CC601D90DF656169038A774BEB94397D5B8BC0D4D815DFDBD17D765A4E41B`
+- Protocol SHA256 `C5017E7950EC6B511EF5F9A47564572FAF492F46BE20867C8A5805E4575EEB49`
 
-**The shipped level-transition correction is unchanged:** selected keyboard/mouse mode stays across ordinary clear/intermission/next-stage transitions. No actions while inactive; known keys remain consumed; held inputs require release/fresh press. Explicit/safety releases never auto-recapture. No input/adapter/audio edits.
+This candidate retains **R4 compatibility with published v0.4.0**, unlike v0.3.0/R3. Use the same candidate on testers wanting the new effects; older R4 clients retain their original presentation. No new damage acknowledgement/event packets, health/cooldown changes, snapshot cadence or budget increases.
 
-Additional evidence:
-- Ground boss center matches model position while shielded/exposed; constant1.5 scale, moving shield and ±1-lane reach bracket. Host rendering never extrapolates from wall clock.
-- Guest smoothing follows only the known patrol, capped at its endpoint and2.5s snapshot age. Pause/staleness freezes; no next phase predicted. Stage/epoch/replay/gap/hide/session changes reset visual baselines.
-- Distinct stride/raised windup/release/lowered recovery poses and stomp leg pose. Fixed48-texture origin-to-target cues for crumb/beam/stomp/barrage; ground/all-height warnings distinguished.
-- A0.5s attack can fall between1.25s worlds. A timely consecutive same-cycle windup→recovery receipt can show **0.65s static residue**, labelled IMPACT CONFIRMED. It does not fire a late projectile, infer damage, award score, repeat per frame, or trigger for late join/gap/staleness/pause. Missed attack frames otherwise remain missed.
-- Exactly500 animated25-actor renders leave **105 frames /1,521 textures /97 fonts**,seven lane markers,72 particles and48 boss-cue textures unchanged. This establishes bounded WoW-object pools, not zero Lua allocations or native frame time.
+Full existing network suite rerun:
+- Maximum valid world: **494 body bytes**,3 fragments,593 payload/641 charged bytes,largest packet209/255.
+- Forty96-byte-name participants: admission41.3s; host4.20msg/s,618.7 payloadB/s,685.9 chargedB/s; queue53/128,world gap1.5s.
+- Mixed40 real nodes =20 human actors+20 spectators plus5 AI:82.9 simulated seconds through four moving bosses/combat/replay,4.35% per-recipient loss,0–300ms jitter/reordering/duplicates; exact final convergence.
+- Mixed host3.46msg/s,457.8 payloadB/s,513.1 chargedB/s; group36.00msg/s,1,375.9 payloadB/s;402 heartbeats; queue41/128; maximum world gap4.0s.
+- Unchanged8msg/s and700 chargedB/s token budgets, with every emitted message checked. A single AI clears four bosses in100.8 game seconds; five AI50.8s Co-op/85.2s Brawl.
 
-## Building-detail correction before publication
+These are simulation figures, **not live40-client transport proof**. Full worlds remain1.25s; no prediction. Seven-second warnings exceed the measured4s gap, not arbitrary delay/loss. Damage deltas may arrive late or be intentionally omitted after a stale/gapped interval. Friendly/nonprecision play, no competitive fairness or host migration claim.
 
-The owner requested earlier window/facade detail back while the release was still at its test gate, before any new tag/upload. The initial pipeline was stopped there; its inferred0.4.0 bump is retained and resumed without another bump. Historicalv0.2.0/v0.3.0 UI declared windows and trim, but wall/frame/pane/mullions shared ARTWORK ordering and damaged panes fell to0.23 alpha. These are visibility risks, not proof of the user's native rendering cause.
+## Inspected visual sequence
 
-Restored explicit ordering: wall BACKGROUND; shadows/brick seams BORDER; window frame ARTWORK0,lit panes ARTWORK1,glints ARTWORK2; mullions/sills/cornice OVERLAY. Damage retains0.65 pane alpha, distinct cracks and readable facade details. Added117 fixed textures (27 sills,27 vertical mullions,27 glints,36 brick seams), no new levels/assets/gameplay. Regression checks intact/damaged/destroyed floors, all nine floors at normal scale, layer/sublevel ordering and visible detail. Mock exporter now respects texture sublevels. Actual before/after patrol fixture inspected; native rendering remains unverified.
+Actual UI.lua/TOC geometry, not hand-authored concept art:
+- `hit-before`:10/10 exposed boss, no new loss effects.
+- `hit-impact`: real Model.damage plus local Input punch, then+0.08s. Boss9/10 with YOU HIT -1HP, local80/100 with YOU -20HP, trails and bounded reactions.
+- `hit-settle`:same result after+1.4s; labels/trails/recoil gone and base transforms restored.
+- `hit-reduced`:same confirmed damage with Reduced Motion enabled; static labels/trails remain, offsets/particles cleared.
+- `hit-team`:consecutive client sample,total boss loss3 and local loss20; TEAM HIT attribution and SAMPLE/estimated guidance; actor metadata agrees with the four visible actors.
+- `hit-shield`:10/10 HP, nine remaining floors, restored window/facade detail retained.
 
-## Inspected visual previews
+SVGs under `docs/previews/`; PNGs and a six-frame contact sheet under `artifacts/rampage/hit-feedback/`. Inspected outgoing/incoming distinction, local label clearance from boss face, HP trails, shield guidance and accessible Reduced Motion button. Normal-size controls/readouts show no obvious clipping in mocks. Dense25-actor native clutter/fonts/scaling remain manual. These are **MOCK LAYOUTS, not WoW screenshots**. Earlier preview files depict their historical builds.
 
-Actual UI.lua geometry exported using explicit WoW mocks, not hand-drawn concepts:
-- `boss-patrol-mock`: shielded boss at lane2.5 with stride and ground bracket.
-- `boss-windup-mock`: exposed boss at lane4 with raised charge and locked warning lane.
-- `boss-impact-mock`: boss at lane5 with crumb trajectory toward warned lane3.
+## Manual playtest after choosing a coordinated install
 
-SVGs are underdocs/previews; final review PNGs under `artifacts/rampage/boss-motion/`. Inspected readable mode/health/input controls, changing ground positions/poses, warning columns, visible origin trajectory and reach bracket. No normal-size control clipping seen. Character/boss overlap is intentional; native fonts/scaling/raid clutter still require testing. These are **MOCK LAYOUTS, not WoW screenshots**. Earlier preview files depict their historical builds.
+- [ ] Keep publishedv0.4.0 on current household installs until choosing to test. Do not extract into the stable checkout via its junction. Candidate ZIP requires explicit test installation; reload alone does not install it.
+- [ ] `/rampage solo`→PLAY. Punch air: fist and concise shield/range hint, no damage/contact number. Hit a floor:HP loss rather than fame; restored windows remain readable.
+- [ ] Add AI, flatten city and chase the exposed moving boss. Verify numeric HP and exact solo YOU HIT response inside actual ground range; ground/range guidance outside it.
+- [ ] Take one marked boss impact or Brawl hit. Check local recoil/trail/loss number is clear but restrained; health resets/respawn do not show fake damage. No screen/camera shake.
+- [ ] Toggle Reduced Motion during an effect; motion stops immediately while static information remains. Hide/reopen/combat/stage changes must not replay old hits or retain offsets; control selection/safety unchanged.
+- [ ] Two real clients in one PARTY/RAID: remote target loss says TEAM aggregate, not a local hit claim. Check subjective response at1.25s worlds, sampled range guidance, Brawl highlighting, joining/spectating/replay and sound mute/defaultOFF. Scale only after two-client response is acceptable.
+- [ ] Native WoW focus/taint/fonts/scaling and optional audio remain unverified. A prior “fun tonight” report does not certify these specific checks.
 
-## Manual playtest outstanding
+## Handoff
 
-Use the same new versioned release on all participating machines:
-
-- [ ] `/rampage solo`→Add AI→PLAY. Watch shielded patrol,7s windup/attack,then5s recovery. No body-contact damage.
-- [ ] Flatten city; chase and hit inside the actual boss bracket, miss outside even in old lanes3–5. AI also chases and finishes.
-- [ ] Observe all four personalities. Ranged columns damage all heights; Snack Tax stomp is ground-only. Targets stop tracking once warning starts; dodge early.
-- [ ] Control selection survives cities; held actions need release/fresh press. Escape/close/chat/focus/combat still release and never auto-arm.
-- [ ] Host combat pauses movement/windup/recovery; guest protection precedes known impacts, while acknowledging initial detection delay.
-- [ ] Two actual clients in one PARTY/RAID on the sameR4 ZIP: warning visibility, hit response, interpolation/pause/staleness, late join/replay. Separate parties/guild chat are not connected.
-- [ ] Brawl consent, human/AI hits/KO, spectator immunity and bot eviction; scale only after two-client response is acceptable.
-- [ ] Native fonts/scaling/taint/taskbar focus/audio; optional BM off/mute/None unchanged. Restore matching publishedv0.3.0 on both machines if rolling back.
-
-## Authorized publication handoff
-
-Publish the reviewed PR with the render-stall fix through the existing regular release pipeline. Verify exact versioned archive/per-entry hashes, downloaded GitHub asset, tag/main/PR/issue state and CurseForge upload receipt separately from moderation/public visibility. Leave primary clean on the new release with its junction unchanged. Preserve the isolated worktree and older archives. This authorization covers current moving bosses only; unique levels remain future work.
+New tested PR and unique head-labelled portable ZIP only, with every entry SHA256 checked against this checkout. No release tooling/config/workflow/installed-skill changes, no borrowed media/dependencies. Primary/release ZIP/old worktrees remain preserved. Parent performs independent review and user delivery. New explicit approval is required to merge/tag/publish; unique levels remain later backlog.

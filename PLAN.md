@@ -1,33 +1,22 @@
-# Rampage — roaming-boss iteration
+# Rampage — hit feedback and boss readability
 
-## User request
-After v0.3.0's AI/Brawl improvement, make bosses visibly **move and attack**. Keep unique/different levels as later backlog. Do not mix the next candidate into the household's released install.
+## Current request / boundary
+The owner enjoyed v0.4.0 and requested clearer incoming impacts, satisfying successful hits and a clearer explanation of boss damage. This is a new feature iteration, **not publication authorization**. Prior approvals were consumed by v0.4.0. No CurseForge polling/reupload, Discord changes or new level work.
 
-## Isolation / release boundary
-- Worktree: `C:\Users\leroy\repos\Rampage-boss-motion`, feature branch for issue #7, based on `7c27d1b` / v0.3.0.
-- Owner authorized current PR #8 publication on October29,2026 at12:57 after independent review and correction of the stale-render residue edge.
-- During development primary remained clean v0.3.0. Authorized publication now advances primary main to the new release; actual anniversary AddOns junction stays pointed at `C:\Users\leroy\repos\Rampage`, with no forced reload or SavedVariables edits. The feature worktree and old archives remain preserved.
-- Existing regular release pipeline infers the version bump, synchronizes TOC/app and tests before tag/upload. Both machines must use the same new R4 release, incompatible with v0.3.0/R3. No release/config/workflow/tooling changes or external audio/art. Authorization applies to this moving-boss iteration only.
+Develop only in `C:\Users\leroy\repos\Rampage-hit-feedback`, issue #10 branch, based on `5ec13435deda1244c9bfbe63735777fe4af2de7b` /v0.4.0. Primary `C:\Users\leroy\repos\Rampage` and its actual anniversary-client junction stay on the release for household play. Preserve the old boss-motion worktree and all release/candidate archives. No forced reload or external SavedVariables editing.
 
-## Implemented playable scope
-- Shared pure boss position for movement, hit checks, AI pursuit and rendering. Ground patrol stays in lanes2–6 at ≤2 lanes per5s; no old fixed3–5 hitbox or body-contact damage.
-- Cycle: **5s patrol →7s locked windup →0.5s once-only attack →5s stationary recovery**. At least four safe lanes; origin and targets stop moving before warning starts.
-- Crumb Baron stroll/throw; Permitron march/beam; Snack Tax nearest-actor pursuit/ground-only stomp; Queuezilla alternating strides/simultaneous three-column barrage.
-- Moving shield, ground reach bracket, phase-specific limbs and48 fixed boss-cue textures connect actual origin/targets. Clients only smooth the known patrol segment and freeze on pause/staleness. No client damage or future-phase prediction.
-- If a timely consecutive world skips the short attack pose but confirms recovery of the same warned cycle, display a short static confirmed-impact residue, never a delayed projectile or catch-up damage. Late joins/gaps/stale/pause do not trigger it.
-- Existing default Co-op, opt-in Brawl consent, health/KO/respawn, five-AI/25-actor/40-real-participant caps and pre-tick guest combat protection retained.
-- Shipped control-persistence fix unchanged: selected keyboard/mouse survives ordinary level transitions, held inputs do not replay, explicit/safety releases never auto-recapture.
+## Bounded design
+- Confirmed incoming HP loss produces a short sprite-local reaction, tasteful tint/loss trail and aggregate damage text. Strongest for the local player; other actors restrained. No world-camera/window shake, authoritative movement or hitbox changes.
+- Distinguish swing intent from confirmed contact. Exact local host/solo results may say YOU; remote snapshot target losses are TEAM/aggregate, never invented local attribution. Fame is not damage.
+- Persistent boss HP with shield/floors-left/exposed/ground/range guidance based on the existing moving-boss helper. Remote guidance is explicitly sampled, not a host rejection acknowledgement. Explain Brawl target priority without changing it.
+- Reduced Motion persists through normal addon settings. It removes shake/bounce while retaining useful static damage/health feedback. Every offset/effect resets on completion, hide/combat/KO, stage/session/role and identity changes.
+- Bounded queues/pools and delta deduplication. No damage effects for heals/respawn, late joins/reopen, stale/reordered/blackout samples or slot reuse. Measure previous sample age before replacing timestamps; exact2.5s boundary retained.
+- Preserve R4 wire and Model/Protocol bytes. Do not create a cosmetic event replication layer, change health/cooldowns or increase the bandwidth budget.
 
-## Verification
-- [x] Deterministic bounded movement, exact hit/miss/shield behavior, locked attack timing, stationary recovery, ground/ranged damage, pause and reset.
-- [x] AI chase and solo/five-AI four-boss completion in Co-op/Brawl.
-- [x] R4 strict compact-world round trips, late join, malformed/stale/reordered/lost worlds, no client impact replay.
-- [x] Actual40-node maximum-name/mixed-AI simulations within existing700 chargedB/s and8msg/s limits; no higher bandwidth allowance.
-- [x] Actual TOC/input/UI/audio regression suite; fixed object pools and source-derived patrol/windup/impact previews.
-- [ ] New native WoW graphics, focus/taint, two-client response, audio and large live raid checks.
+## Existing strengths to retain
+Restored windows/explicit draw layers and damaged-floor readability; shared moving-boss hitbox/AI; seven-second telegraphs; default Co-op/explicit Brawl; five-AI/25-actor/40-real-participant caps; spectator immunity; pre-tick combat protection; keyboard/mouse selection across intermissions with all safety releases/no automatic recapture; optional audio default off/mute/deduplication.
 
-## Deliberate limits
-Full worlds still every1.25s. Seven-second windup exceeds the measured4s gap but arbitrary loss can hide warnings. Clients may miss the0.5s attack pose; confirmed aftermath is presentation-only. Known-segment animation is not network precision. No host migration, malicious-host anti-cheat, map overhaul, new combat progression or contact physics.
+## Verification / handoff
+Retain all74 release checks plus focused pure-feedback and actual-TOC/UI tests. Run full network simulations despite unchanged wire, separate Lua5.1 grammar from Fengari execution, audit dependencies and verify diff scope. Inspect actual UI before/contact/settled/reduced-motion frames and bounded25-actor pools. Native WoW visuals/focus/taint and real multiplayer remain manual.
 
-## Later backlog — not this PR
-Distinct level silhouettes, tower arrangements, palettes and boss-specific scenery after the moving-boss playtest. New level work receives separate scope/approval; it is not silently bundled here.
+New issue/PR and a unique portable head-labelled ZIP only. Verify each archive entry against the checkout and preserve old artifacts. Primary and junction must remain unchanged at final handoff; merely reloading the current install does not load this candidate. Parent independently reviews and the user chooses installation. Fresh explicit approval is required for merge/tag/publication. Unique levels remain deferred.

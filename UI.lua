@@ -1,6 +1,6 @@
 -- Original Toast arcade art: every silhouette, prop and particle is authored here.
 -- Fixed pools: 25 creatures, 25 crew chips, 7 hazard lanes, 9 floors,
--- 72 particles and 4 x 12 boss-cue textures. No presentation code deals damage.
+-- 72 particles, 12 damage labels and 4 x 12 boss-cue textures. No presentation code deals damage.
 local _, addon = ...
 local UI = { WIDTH = 900, HEIGHT = 660, MAX = 25 }
 addon.UI = UI
@@ -108,9 +108,11 @@ local function creature(parent, slot, boss)
     f.fist = skin(44,28,15,15); f.fist:Hide()
     f.badge = text(f,10,-5,-68,58,"CENTER")
     f.badge:SetText(tostring(slot)); f.hit = nil
-    f.healthBack=rect(f,3,68,42,3,0.08,0.06,0.09)
-    f.health=rect(f,3,68,42,3,0.38,0.88,0.45)
-    f.hurt=rect(f,-2,0,52,65,1,0.22,0.15,0.3,"OVERLAY"); f.hurt:Hide()
+    f.healthBack=rect(f,3,68,42,3,0.08,0.06,0.09,1,"BACKGROUND")
+    f.healthTrail=rect(f,3,68,42,3,1,0.72,0.38,1,"ARTWORK",0); f.healthTrail:Hide()
+    f.health=rect(f,3,68,42,3,0.38,0.88,0.45,1,"ARTWORK",1)
+    f.hurt=rect(f,-2,0,52,65,1,0.54,0.24,0.20,"OVERLAY"); f.hurt:Hide()
+    f.target=rect(f,-5,-5,58,2,1,0.65,0.35); f.target:Hide()
     if boss then f.healthBack:Hide(); f.health:Hide() end
     return f
 end
@@ -224,8 +226,9 @@ function UI.create(app)
         UI.hazardLanes[lane]=mark
     end
     UI.hazardText=text(city,12,10,-68,612,"CENTER")
-    UI.bossBarBack = rect(city,134,305,364,5,0.06,0.05,0.08)
-    UI.bossBar = rect(city,134,305,364,5,0.95,0.54,0.28)
+    UI.bossBarBack = rect(city,134,305,364,5,0.06,0.05,0.08,1,"ARTWORK",0)
+    UI.bossTrail = rect(city,134,305,364,5,1,0.82,0.49,1,"ARTWORK",1); UI.bossTrail:Hide()
+    UI.bossBar = rect(city,134,305,364,5,0.95,0.54,0.28,1,"ARTWORK",2)
     UI.bossLabel = text(city,10,10,-52,612,"CENTER")
     UI.floors,UI.rubble={},{}
     for tower=1,3 do
@@ -258,6 +261,7 @@ function UI.create(app)
             tile.crack:SetFrameLevel(tile:GetFrameLevel()+1)
             rect(tile.crack,35,33,5,30,0.09,0.08,0.12); rect(tile.crack,39,25,10,8,0.09,0.08,0.12)
             rect(tile.crack,45,0,5,28,0.09,0.08,0.12)
+            tile.contact=rect(tile,0,0,80,66,1,0.74,0.35,0.15,"OVERLAY",2); tile.contact:Hide()
             UI.floors[(tower-1)*3+floor]=tile
         end
         local roof=UI.floors[(tower-1)*3+3]
@@ -294,6 +298,13 @@ function UI.create(app)
     UI.fx=CreateFrame("Frame",nil,city); UI.fx:SetSize(632,354); UI.fx:SetPoint("BOTTOMLEFT",city,"BOTTOMLEFT",0,0)
     UI.fx:SetFrameLevel(city:GetFrameLevel()+14); UI.particles={}; UI.particleCursor=0
     for i=1,72 do local t=rect(UI.fx,0,0,5,5,1,0.7,0.4); t:Hide(); UI.particles[i]={texture=t} end
+    -- Slot one is reserved for local hurt; slot two for confirmed boss damage.
+    -- Other labels coalesce by target/source, never grow with a 25-person burst.
+    UI.damageLabels={}
+    for i=1,12 do
+        local font=text(UI.fx,i==1 and 14 or 12,0,0,148,"CENTER"); font:Hide()
+        UI.damageLabels[i]={font=font}
+    end
     -- Four targets is the hard ceiling (at least three of seven lanes safe).
     -- Dotted beams/arcs and flat stomp rings use the same fixed texture pool.
     UI.bossCues={}
@@ -330,8 +341,9 @@ function UI.create(app)
         if app.input.focused then app.input:release() else app.input:grab() end; UI.render()
     end,true)
     UI.captureStatus=text(root,12,222,-507,655)
-    UI.healthBack=rect(root,370,104,188,12,0.045,0.04,0.06)
-    UI.health=rect(root,370,104,188,12,0.38,0.88,0.45)
+    UI.healthBack=rect(root,370,104,188,12,0.045,0.04,0.06,1,"ARTWORK",0)
+    UI.healthTrail=rect(root,370,104,188,12,1,0.72,0.38,1,"ARTWORK",1); UI.healthTrail:Hide()
+    UI.health=rect(root,370,104,188,12,0.38,0.88,0.45,1,"ARTWORK",2)
     UI.healthLabel=text(root,11,367,-561,194,"CENTER")
     UI.controls={}
     local labels,actions={"A/Left","W/Up","Space","S/Down","D/Right"},{"L","U","P","D","R"}
@@ -347,14 +359,26 @@ function UI.create(app)
         return "Default OFF. Uses your installed provider's crit / combatStart / levelUp mappings, including None and volume variants. No audio files bundled. "..(app.sound and app.sound.status or "")
     end)
     UI.mute=button(root,"Mute",728,-542,152,function() app.db.muted=not app.db.muted; UI.render() end)
-    UI.hint=text(root,12,21,-585,858)
-    UI.status=text(root,10,21,-622,858)
+    UI.reducedMotion=button(root,"Reduced motion: OFF",690,-581,190,function()
+        app.db.reducedMotion=not app.db.reducedMotion
+        UI.restoreFeedbackMotion(); UI.clearParticles(); UI.render()
+    end)
+    hover(UI.reducedMotion,"Reduced motion", "Keeps damage numbers, health trails and target highlights. Disables recoil, bobbing, walking bounce and moving particles immediately. Saved in Rampage settings.")
+    UI.hint=text(root,11,21,-585,660)
+    UI.feedbackStatus=text(root,10,21,-615,858)
+    UI.status=text(root,10,21,-637,858)
     app.input=addon.Input.create(app,root)
-    root:SetScript("OnHide",function() app.input:release("Window hidden — keys released"); UI.baseline=nil; UI.resetBossVisuals(); UI.clearParticles(); if GameTooltip then GameTooltip:Hide() end end)
-    root:SetScript("OnShow",function() UI.fit(); UI.nextDiscovery=0; UI.baseline=nil; UI.resetBossVisuals(); UI.clearParticles(); app.input:shown() end)
+    root:SetScript("OnHide",function()
+        app.input:release("Window hidden — keys released")
+        if app.feedback then app.feedback:observe(false) end
+        UI.resetFeedback(); UI.baseline=nil; UI.resetBossVisuals(); UI.clearParticles()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+    root:SetScript("OnShow",function() UI.fit(); UI.nextDiscovery=0; UI.baseline=nil; UI.resetFeedback(); UI.resetBossVisuals(); UI.clearParticles(); app.input:shown() end)
     UI.fit(); root:Hide(); return root
 end
 function UI.burst(x,y,count,style)
+    if UI.app.db.reducedMotion then return end
     local now=UI.app.now()
     for i=1,count do
         UI.particleCursor=UI.particleCursor%#UI.particles+1
@@ -366,6 +390,143 @@ function UI.burst(x,y,count,style)
         local c=p.confetti and color(i) or (style=="hit" and {1,0.83,0.41} or {0.77,0.56,0.38})
         p.texture:SetColorTexture(c[1],c[2],c[3],1); p.texture:SetSize(style=="hit" and 3 or 5,style=="hit" and 11 or 5)
         place(p.texture,UI.fx,x,y); p.texture:Show()
+    end
+end
+-- Assign base coordinates every time: no additive offsets or cumulative drift.
+-- Hidden cleanup restores transforms immediately, without waiting for a render.
+function UI.restoreFeedbackMotion()
+    for _,m in ipairs(UI.monsters or {}) do
+        m.recoilX,m.recoilY=0,0
+        if m.drawX then place(m,UI.city,m.drawX,m.drawY) end
+        place(m.legL,m,7,1); place(m.legR,m,29,1)
+        place(m.armL,m,0,m.y and m.y>0 and 36 or 20)
+        place(m.armR,m,37,m.y and m.y>0 and 30 or 20)
+    end
+    if UI.boss then
+        UI.boss.recoilX,UI.boss.recoilY=0,0
+        if UI.boss.drawX then place(UI.boss,UI.city,UI.boss.drawX,UI.boss.drawY) end
+    end
+end
+function UI.resetFeedback()
+    UI.restoreFeedbackMotion()
+    UI.feedbackNotice,UI.feedbackNoticeUntil=nil,nil
+    for _,m in ipairs(UI.monsters or {}) do
+        m.hurtAt,m.hurtUntil,m.trailHP,m.trailUntil,m.punchUntil=nil,nil,nil,nil,nil
+        m.hurt:Hide(); m.healthTrail:Hide(); m.target:Hide(); m.fist:Hide()
+    end
+    if UI.boss then UI.boss.contactAt,UI.boss.contactUntil=nil,nil; UI.boss.hurt:Hide() end
+    for _,tile in ipairs(UI.floors or {}) do tile.contactUntil=nil; tile.contact:Hide() end
+    for _,entry in ipairs(UI.damageLabels or {}) do entry.untilTime=nil; entry.key=nil; entry.font:Hide() end
+    UI.bossTrailHP,UI.bossTrailUntil=nil,nil
+    if UI.bossTrail then UI.bossTrail:Hide() end
+    if UI.healthTrail then UI.healthTrail:Hide() end
+    if UI.feedbackStatus then UI.feedbackStatus:SetText("") end
+end
+local function damageLabel(event,now,x,y)
+    local localHurt=event.kind=="hurt" and event.localActor
+    local key=event.kind..":"..tostring(event.slot or event.index or 0)..":"..(event.kind=="hurt" and "" or event.source or "")
+    local entry=localHurt and UI.damageLabels[1] or nil
+    if event.kind=="boss" then
+        -- Do not mix exact YOU and TEAM attribution into one accumulated label.
+        local reserved=UI.damageLabels[2]
+        if now>=(reserved.untilTime or 0) or reserved.key==key then entry=reserved end
+    end
+    if not entry then
+        for i=3,#UI.damageLabels do
+            local candidate=UI.damageLabels[i]
+            if candidate.key==key and now<(candidate.untilTime or 0) then entry=candidate; break end
+            if not entry and now>=(candidate.untilTime or 0) then entry=candidate end
+        end
+    end
+    if not entry then return end -- reserve local readability instead of flooding.
+    local merge=entry.key==key and now<(entry.untilTime or 0)
+    entry.amount=(merge and entry.amount or 0)+event.amount
+    entry.key,entry.kind,entry.slot=key,event.kind,event.slot
+    -- Keep simultaneous exact and aggregate boss receipts on separate lines.
+    if event.kind=="boss" and entry~=UI.damageLabels[2] then y=y+18 end
+    entry.x,entry.y,entry.at,entry.untilTime=x,y,now,now+(localHurt and 1.15 or 0.9)
+    local prefix=event.kind=="hurt" and (localHurt and "YOU " or "#"..event.slot.." ")
+        or (event.source=="you" and "YOU HIT " or "TEAM HIT ")
+    entry.font:SetText(prefix.."-"..entry.amount.." HP")
+    entry.font:SetTextColor(1,event.kind=="hurt" and 0.66 or 0.88,event.kind=="hurt" and 0.42 or 0.52)
+    entry.font:Show()
+end
+function UI.observeFeedback(now)
+    local app,feedback=UI.app,UI.app.feedback
+    if not feedback then return end
+    feedback:observe(not app.net.combat)
+    local events=feedback:drain()
+    if UI.feedbackGeneration~=feedback.generation then
+        UI.resetFeedback(); UI.clearParticles(); UI.feedbackGeneration=feedback.generation
+    end
+    local s=app.net.state
+    local localP=s and app.net.slot and s.players[app.net.slot]
+    local phase=s and s.phase
+    if not s or s.paused or app.net.combat or localP and (localP.ko or 0)>0 then
+        UI.resetFeedback(); UI.clearParticles(); return
+    end
+    if phase~="play" then
+        if phase~="clear" and phase~="victory" then UI.resetFeedback(); UI.clearParticles(); return end
+        -- Only state-worker-confirmed final boss HP loss may cross play -> clear.
+        -- Cleanup has already happened on the observer's generation change.
+        for _,event in ipairs(events) do
+            if event.kind=="boss" and event.amount and event.amount>0 and now-(event.at or now)<=1.2 then
+                damageLabel(event,now,laneX(event.x or 4),226)
+            end
+        end
+        return
+    end
+    for _,event in ipairs(events) do
+        if now-(event.at or now)<=1.2 then
+            local m=event.slot and UI.monsters[event.slot]
+            local p=event.slot and s.players[event.slot]
+            if event.kind=="swing" then
+                if m and p and (p.ko or 0)==0 then m.punchUntil=now+0.19 end
+            elseif event.kind=="notice" then
+                UI.feedbackNotice,UI.feedbackNoticeUntil=event.text,now+1.6
+            elseif event.amount and event.amount>0 then
+                if event.kind=="hurt" and m and p and (p.ko or 0)==0 then
+                    m.hurtAt,m.hurtUntil=now,now+0.28
+                    m.trailHP=math.min(p.maxHP or 100,math.max(m.trailHP or 0,(p.hp or 100)+event.amount))
+                    m.trailUntil=now+1.15
+                    local labelX,labelY=laneX(p.x),97+(p.y>0 and (p.y-1)*68+22 or 0)
+                    if event.localActor and p.y==0 and math.abs(p.x-addon.Model.bossPosition(s))<0.7 then
+                        -- Keep the local loss label clear of the large boss face
+                        -- when both occupy the same lane; no gameplay offset.
+                        labelX=labelX+(p.x<=4 and 95 or -95)
+                    elseif not event.localActor then labelY=labelY+18+((event.slot-1)%3)*14 end
+                    damageLabel(event,now,labelX,labelY)
+                elseif event.kind=="boss" then
+                    UI.boss.contactAt,UI.boss.contactUntil=now,now+0.24
+                    UI.bossTrailHP=math.max(UI.bossTrailHP or 0,(s.bossHP or s.boss)+event.amount)
+                    UI.bossTrailUntil=now+1
+                    local x=laneX(event.x or addon.Model.bossPosition(s))
+                    damageLabel(event,now,x,158); UI.burst(x,82,4,"hit")
+                elseif event.kind=="building" and UI.floors[event.index or 0] then
+                    local tile=UI.floors[event.index]
+                    tile.contactUntil=now+0.24
+                    local x=126+math.floor((event.index-1)/3)*190
+                    local y=70+(event.index-1)%3*68
+                    damageLabel(event,now,x,y+34); UI.burst(x,y,4,"hit")
+                end
+            end
+        end
+    end
+end
+local function recoil(at,untilTime,now,strength,reduced)
+    if reduced or not at or now>=(untilTime or 0) then return 0,0 end
+    local t=math.max(0,math.min(1,(now-at)/(untilTime-at)))
+    -- One damped recoil/return, no repeating shake.
+    return -strength*math.sin(math.pi*t)*(1-t),strength*0.25*math.sin(math.pi*t)
+end
+function UI.feedbackEffects(now)
+    for _,entry in ipairs(UI.damageLabels) do
+        local p=entry.slot and UI.app.net.state and UI.app.net.state.players[entry.slot]
+        if now<(entry.untilTime or 0) and (not entry.slot or p and (p.ko or 0)==0) then
+            local rise=UI.app.db.reducedMotion and 0 or math.min(8,(now-entry.at)*14)
+            place(entry.font,UI.fx,math.max(0,math.min(484,entry.x-74)),entry.y+rise)
+            entry.font:SetAlpha(math.min(1,(entry.untilTime-now)/0.2)); entry.font:Show()
+        else entry.untilTime=nil; entry.key=nil; entry.font:Hide() end
     end
 end
 function UI.effects(now)
@@ -455,13 +616,13 @@ function UI.bossSample(s,net,now)
     v.confirmed=v.confirmedUntil and now<v.confirmedUntil and motion.phase=="recover" or false
     return v
 end
-local function bossPose(boss,motion,position,stage)
+local function bossPose(boss,motion,position,stage,reduced)
     local phase=motion and motion.phase or "recover"
     local direction=motion and motion.toLane< motion.fromLane and -1 or 1
     if motion and phase~="patrol" and motion.lanes and motion.lanes[1] then
         direction=motion.lanes[1]<position and -1 or 1
     end
-    local stride=phase=="patrol" and math.sin(position*math.pi*4)*4 or 0
+    local stride=not reduced and phase=="patrol" and math.sin(position*math.pi*4)*4 or 0
     local leftY,rightY=20,20
     if phase=="windup" then leftY,rightY=36,46
     elseif phase=="attack" then leftY,rightY=24,30
@@ -537,6 +698,39 @@ end
 function UI.render()
     if not UI.root or not UI.root:IsShown() then return end
     local app,now=UI.app,UI.app.now(); local net,s=app.net,app.net.state
+    if s and s.players then
+        -- Slot identity can change without a whole-session generation reset.
+        -- Bind active visuals to actual participant/bot identity, never just slot.
+        for slot,m in ipairs(UI.monsters) do
+            local p=s.players[slot]; local member=net.members[slot]
+            local identity
+            if p and p.bot then
+                identity="bot:"..tostring(p.botID)..":"..tostring(net.bots and net.bots[slot] and net.bots[slot].order or 0)
+            elseif p and member then
+                for id=1,40 do
+                    local participant=net.participants and net.participants[id]
+                    if participant and participant.slot==slot then
+                        identity=id..":"..(participant.name or "")..":"..tostring(participant.generation or 0)..":"..tostring(participant.roleSeq or 0)
+                        break
+                    end
+                end
+                identity=identity or member.name
+            end
+            if m.feedbackIdentity~=identity then
+                m.hurtAt,m.hurtUntil,m.trailHP,m.trailUntil,m.punchUntil=nil,nil,nil,nil,nil
+                m.recoilX,m.recoilY=0,0; m.hurt:Hide(); m.healthTrail:Hide(); m.fist:Hide()
+                for _,entry in ipairs(UI.damageLabels) do
+                    if entry.slot==slot then entry.untilTime=nil; entry.key=nil; entry.font:Hide() end
+                end
+                m.feedbackIdentity=identity
+            end
+        end
+    end
+    UI.observeFeedback(now)
+    local reduced=app.db.reducedMotion==true
+    if reduced and not UI.wasReduced then UI.restoreFeedbackMotion(); UI.clearParticles() end
+    UI.wasReduced=reduced
+    local guidance=app.feedback and app.feedback:guidance() or nil
     local idle=net.mode=="idle"; local spectator=net.role=="spectate"; local count=net:count()
     local bossVisual=UI.bossSample(s,net,now)
     local watch=net.spectatorCount and net:spectatorCount() or 0
@@ -591,26 +785,41 @@ function UI.render()
             local targetX=31+(p.x-1)*95+dx-17
             local targetY=32+(p.y>0 and ((p.y-1)*68+22) or 0)+row*9
             local first=m.hit==nil or not UI.baseline
-            if first then m.drawX,m.drawY=targetX,targetY end
+            if first or reduced then m.drawX,m.drawY=targetX,targetY end
             m.drawX=m.drawX+(targetX-m.drawX)*0.55; m.drawY=m.drawY+(targetY-m.drawY)*0.55
-            if not first and m.hit~=p.hit then m.punchUntil=now+0.19; UI.burst(targetX+43,targetY+26,5,"hit") end
-            if not first and m.hp and (p.hp or 100)<m.hp then m.hurtUntil=now+0.35 end
+            -- Hit counter is intention, never a successful contact/damage claim.
+            if not first and m.hit~=p.hit then m.punchUntil=now+0.19 end
             m.hit,m.x,m.y,m.hp=p.hit,p.x,p.y,p.hp or 100
-            local walking=now<(m.moveUntil or 0); local bob=walking and math.sin(now*30+slot)*2 or math.sin(now*3+slot)*0.7
             local ko,invuln=(p.ko or 0)>0,(p.invuln or 0)>0
-            place(m,UI.city,m.drawX,m.drawY+bob); m:Show()
-            m:SetAlpha(ko and 0.3 or (invuln and (0.65+0.25*math.sin(now*12)) or (slot==net.slot and 1 or (siblings>8 and 0.85 or 1))))
+            local walking=not reduced and not ko and now<(m.moveUntil or 0)
+            local bob=walking and math.sin(now*30+slot)*2 or 0
+            if ko then m.hurtAt,m.hurtUntil,m.trailHP,m.trailUntil,m.punchUntil=nil,nil,nil,nil,nil end
+            m.recoilX,m.recoilY=recoil(m.hurtAt,m.hurtUntil,now,slot==net.slot and 8 or 3,reduced or ko)
+            place(m,UI.city,m.drawX+m.recoilX,m.drawY+bob+m.recoilY); m:Show()
+            -- Invulnerability is a steady translucent shield, not a rapid strobe.
+            m:SetAlpha(ko and 0.3 or (invuln and 0.8 or (slot==net.slot and 1 or (siblings>8 and 0.85 or 1))))
             m:SetFrameLevel(UI.city:GetFrameLevel()+(slot==net.slot and 12 or 8+row%3))
             show(m.halo,slot==net.slot and not spectator)
             m.badge:SetText(ko and ("KO "..math.ceil(p.ko).."s") or ((isBot and "AI " or "")..(slot==net.slot and "YOU" or tostring(slot))))
             health(m.health,p,42); show(m.hurt,not ko and now<(m.hurtUntil or 0))
+            m.hurt:SetAlpha(slot==net.slot and 1 or 0.45)
+            local trail=not ko and now<(m.trailUntil or 0) and (m.trailHP or 0)>(p.hp or 100)
+            show(m.healthTrail,trail)
+            if trail then m.healthTrail:SetWidth(42*math.min(1,m.trailHP/(p.maxHP or 100)))
+            else m.trailHP,m.trailUntil=nil,nil end
+            show(m.target,guidance and guidance.pvpSlot==slot and not ko)
             m.badge:SetTextColor(slot==net.slot and 1 or 0.9,slot==net.slot and 0.88 or 0.83,slot==net.slot and 0.40 or 0.74)
             place(m.legL,m,7,walking and 1+math.sin(now*30)*3 or 1)
             place(m.legR,m,29,walking and 1-math.sin(now*30)*3 or 1)
-            place(m.armL,m,0,p.y>0 and 36+math.sin(now*10)*3 or 20)
-            place(m.armR,m,37,p.y>0 and 30-math.sin(now*10)*3 or 20)
+            place(m.armL,m,0,p.y>0 and 36+(reduced and 0 or math.sin(now*10)*3) or 20)
+            place(m.armR,m,37,p.y>0 and 30-(reduced and 0 or math.sin(now*10)*3) or 20)
             show(m.fist,not ko and now<(m.punchUntil or 0))
-        else m:Hide(); m.hit=nil; m.x=nil; m.y=nil; m.hp=nil; m.hurtUntil=nil end
+        else
+            if m.drawX then place(m,UI.city,m.drawX,m.drawY) end
+            m:Hide(); m.hit=nil; m.x=nil; m.y=nil; m.hp=nil
+            m.hurtAt,m.hurtUntil,m.trailHP,m.trailUntil,m.punchUntil=nil,nil,nil,nil,nil
+            m.recoilX,m.recoilY=0,0; m.hurt:Hide(); m.healthTrail:Hide(); m.fist:Hide(); m.target:Hide()
+        end
     end
     local localP=s and net.slot and s.players[net.slot]
     UI.personal:SetText(spectator and "SPECTATOR" or (localP and (localP.score.."  YOUR FAME") or "READY TO SMASH?"))
@@ -619,26 +828,24 @@ function UI.render()
     local showHealth=localP~=nil and not spectator
     show(UI.healthBack,showHealth); show(UI.health,showHealth); show(UI.healthLabel,showHealth)
     health(UI.health,localP,188)
+    local localMonster=net.slot and UI.monsters[net.slot]
+    local localTrail=showHealth and localMonster and now<(localMonster.trailUntil or 0)
+    show(UI.healthTrail,localTrail)
+    if localTrail then UI.healthTrail:SetWidth(188*math.min(1,localMonster.trailHP/(localP.maxHP or 100))) end
     if showHealth then
         UI.healthLabel:SetText((localP.ko or 0)>0 and ("KO - respawn in "..math.ceil(localP.ko).."s")
             or ((localP.hp or 100).." / "..(localP.maxHP or 100).." HP"..((localP.invuln or 0)>0 and (" • SHIELD "..math.ceil(localP.invuln).."s") or "")))
     end
     local alive=s and addon.Model.cityAlive(s)
     local previous=UI.baseline
-    local same=previous and s and previous.stage==s.stage and previous.sid==net.sid
-        and previous.epoch==(s._epoch or net.inputEpoch or 0) and (net.inSeq or 0)>=(previous.seq or 0)
-        and (net.mode~="client" or (net.inSeq or 0)<=(previous.seq or 0)+1)
     for i=1,9 do
         local hp=s and s.phase~="lobby" and (s.hp[i] or 0) or 2; local tile=UI.floors[i]
         show(tile,hp>0); show(tile.crack,hp==1)
         tile.body:SetColorTexture(hp==2 and 0.40 or 0.27,hp==2 and 0.34 or 0.23,hp==2 and 0.37 or 0.26,1)
         -- Damage cracks/darkens the facade without erasing its window detail.
-        for _,w in ipairs(tile.windows) do w:SetAlpha(hp==2 and 0.9+math.sin(now*1.3+i)*0.08 or 0.65) end
+        for _,w in ipairs(tile.windows) do w:SetAlpha(hp==2 and (reduced and 0.9 or 0.9+math.sin(now*1.3+i)*0.08) or 0.65) end
         for _,glint in ipairs(tile.glints) do glint:SetAlpha(hp==2 and 1 or 0.6) end
-        if same and previous.hp[i] and hp<previous.hp[i] then
-            local tower=math.floor((i-1)/3)+1; local floor=(i-1)%3+1
-            UI.burst(126+(tower-1)*190,48+(floor-1)*68,hp==0 and 14 or 7,hp==0 and "dust" or "hit")
-        end
+        show(tile.contact,now<(tile.contactUntil or 0))
     end
     for i=1,3 do show(UI.rubble[i],s and s.phase~="lobby" and not addon.Model.towerAlive(s,i)) end
     local boss=UI.boss; local stage=s and s.stage or 1; local bc=bossPalette[stage]
@@ -649,19 +856,30 @@ function UI.render()
     show(boss,bossShown); boss:SetAlpha(alive and 0.92 or 1)
     boss.artScale=1.5; boss:SetScale(boss.artScale); show(boss.halo,not alive)
     boss.drawLane,boss.drawCenterX,boss.drawX,boss.drawY=position,center,center-24*boss.artScale,32
-    place(boss,UI.city,boss.drawX,boss.drawY)
-    bossPose(boss,s and s.bossMotion,position,stage)
+    boss.recoilX,boss.recoilY=recoil(boss.contactAt,boss.contactUntil,now,4,reduced)
+    place(boss,UI.city,boss.drawX+boss.recoilX,boss.drawY+boss.recoilY)
+    show(boss.hurt,now<(boss.contactUntil or 0))
+    bossPose(boss,s and s.bossMotion,position,stage,reduced)
     for _,part in ipairs(boss.shield) do show(part,alive) end
     show(UI.bossGround,bossShown); place(UI.bossGround,UI.city,center-95,0)
-    UI.bossGround.label:SetText(alive and "SHIELDED / MOVING" or "GROUND PUNCH REACH")
-    local inReach=not alive and localP and localP.y==0 and math.abs(localP.x-position)<=1
-    UI.bossGround.strip:SetColorTexture(inReach and 0.45 or 1,inReach and 1 or 0.84,0.4,0.8)
+    UI.bossGround.label:SetText(alive and "SHIELDED / MOVING" or (net.mode=="client" and "ESTIMATED GROUND REACH" or "GROUND PUNCH REACH"))
+    local inReach=s and not alive and (guidance and guidance.bossReach or addon.Model.bossInReach(s,localP))
+    -- The bracket follows the rendered estimate. Guest reach eligibility uses
+    -- the received Model position and is not colored as an exact host promise.
+    local exactReach=inReach and net.mode~="client"
+    UI.bossGround.strip:SetColorTexture(exactReach and 0.45 or 1,exactReach and 1 or 0.84,0.4,0.8)
     boss.badge:SetText(alive and "SHIELDED" or "BOSS")
     local bossHP=s and (s.bossHP or s.boss) or 10
-    UI.bossBar:SetWidth(math.max(1,364*bossHP/(8+stage*2)))
+    UI.bossBar:SetWidth(math.max(0.1,364*math.max(0,math.min(1,bossHP/(8+stage*2)))))
     UI.bossBar:SetColorTexture(alive and 0.64 or 0.98,alive and 0.61 or 0.40,alive and 0.65 or 0.26,1)
-    UI.bossLabel:SetText(bossShown and (alive and "SHIELD UP • flatten every floor; boss still moves and attacks"
-        or (bossHP.." HP • EXPOSED! Hit near boss on ground (gold bracket), SPACE")) or "25 MONSTERS • 4 CITIES • ONE VERY TOASTY TEAM")
+    show(UI.bossTrail,bossShown and now<(UI.bossTrailUntil or 0))
+    if now<(UI.bossTrailUntil or 0) then UI.bossTrail:SetWidth(364*math.min(1,UI.bossTrailHP/(8+stage*2)))
+    else UI.bossTrailHP,UI.bossTrailUntil=nil,nil end
+    local floorsLeft=0; if s then for i=1,9 do if (s.hp[i] or 0)>0 then floorsLeft=floorsLeft+1 end end end
+    local bossHelp=(net.mode=="client" and "SAMPLE • " or "")..bossHP.." / "..(8+stage*2).." HP • "
+        ..(alive and ("SHIELDED • flatten "..floorsLeft.." floors") or "EXPOSED • Hit near boss on ground")
+    -- Keep this one-line health readout short even when guidance includes Brawl.
+    UI.bossLabel:SetText(s and s.phase~="lobby" and bossHelp or "25 MONSTERS • 4 CITIES • ONE VERY TOASTY TEAM")
     local hazard=s and s.phase=="play" and s.hazard
     local warning=hazard and hazard.phase=="warning"
     local impact=hazard and hazard.phase=="impact"
@@ -709,12 +927,17 @@ function UI.render()
     label(UI.audio,app.db.useBlasterMaster and "Local BM: ON" or "Local BM: OFF")
     selected(UI.audio,app.db.useBlasterMaster); selected(UI.mute,app.db.muted)
     label(UI.mute,app.db.muted and "UNMUTE RAMPAGE" or "Mute Rampage")
+    label(UI.reducedMotion,reduced and "Reduced motion: ON" or "Reduced motion: OFF"); selected(UI.reducedMotion,reduced)
+    local rangeHelp=not alive and localP and (localP.y~=0 and "Get to ground level" or inReach and "In ground range — punch!" or "Out of range — move within 1 lane") or "Flatten all floors to expose the boss"
+    UI.feedbackStatus:SetText(now<(UI.feedbackNoticeUntil or 0) and UI.feedbackNotice or
+        (gameMode=="brawl" and ((net.mode=="client" and "SAMPLED • " or "").."BRAWL: lowest eligible slot first • same height, within 1 lane"..(guidance and guidance.pvpSlot and (" • target #"..guidance.pvpSlot) or ""))
+        or ((net.mode=="client" and "SAMPLED / estimated • " or "")..rangeHelp.." • HP loss, not fame • YOU: exact hit / TEAM: total")))
     UI.hint:SetText(spectator and "Enjoy the chaos. Switch to Play above when there is space; this never happens automatically."
         or ("WASD / arrows: walk & climb • Space: punch • Esc: release • dodge marked lanes!\n"..(gameMode=="brawl" and "BRAWL: hit rivals; KOs are not fame. Fast respawn + shield. " or "CO-OP: crew punches are safe. ").."Climb 2, 4, 6; flatten towers, then boss."))
     UI.status:SetText((net.status or "").."  •  Drag title to move • Close hides; Leave exits")
     UI.baseline=s and {stage=s.stage,phase=s.phase,sid=net.sid,epoch=s._epoch or net.inputEpoch or 0,seq=net.inSeq or 0,hp={}} or nil
     if s then for i=1,9 do UI.baseline.hp[i]=s.hp[i] end end
-    UI.effects(now)
+    UI.effects(now); UI.feedbackEffects(now)
 end
 function UI.update(elapsed)
     if not UI.root or not UI.root:IsShown() then return end

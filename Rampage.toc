@@ -8,6 +8,7 @@
 
 Model.lua
 Protocol.lua
+Feedback.lua
 Input.lua
 Sound.lua
 UI.lua

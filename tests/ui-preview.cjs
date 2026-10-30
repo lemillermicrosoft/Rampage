@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
 const value = (key, fallback) => args.includes(key) ? args[args.indexOf(key) + 1] : fallback;
 const scene = value('--scene', 'solo');
-if (!['solo', 'raid', 'boss', 'spectator', 'victory', 'brawl', 'hazard', 'ko', 'boss-patrol', 'boss-windup', 'boss-impact'].includes(scene)) throw new Error('Unknown scene');
+if (!['solo', 'raid', 'boss', 'spectator', 'victory', 'brawl', 'hazard', 'ko', 'boss-patrol', 'boss-windup', 'boss-impact', 'hit-before', 'hit-impact', 'hit-settle', 'hit-reduced', 'hit-team', 'hit-shield'].includes(scene)) throw new Error('Unknown scene');
 const L = lauxlib.luaL_newstate();
 lualib.luaL_openlibs(L);
 function execute(source, name) {
@@ -24,7 +24,8 @@ execute(`unpack=table.unpack; TEST_COUNT=0; EXPECTED_VERSION='${tocVersion}'
 function check(name,fn) local ok,err=pcall(fn); if not ok then error('FAIL: '..name..'\\n'..tostring(err),0) end TEST_COUNT=TEST_COUNT+1; print('PASS: '..name) end
 function eq(a,b) assert(a==b,'expected '..tostring(b)..', got '..tostring(a)) end`, '@bootstrap');
 execute(fs.readFileSync(path.join(root, 'tests/wow-smoke.lua'), 'utf8'), '@wow-mock');
-for (const file of ['Model.lua', 'Protocol.lua', 'Input.lua', 'Sound.lua', 'UI.lua', 'Rampage.lua']) {
+const runtime = fs.readFileSync(path.join(root, 'Rampage.toc'), 'utf8').split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith('#'));
+for (const file of runtime) {
   const source = fs.readFileSync(path.join(root, file), 'utf8');
   luaparse.parse(source, { luaVersion: '5.1' });
   execute(`assert(load([====[${source}]====], '@${file}'))('Rampage',Addon)`, '@load-' + file);

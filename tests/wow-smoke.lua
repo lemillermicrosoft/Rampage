@@ -152,6 +152,165 @@ function runWoWSmoke()
         assert(ui.floors[1].crack:IsShown()); step(0.25); click(ui.controls[3]); eq(app.net.state.hp[1], 0)
         assert(not ui.floors[1]:IsShown()); eq(RampageDB.best, 20); eq(#sent, 0)
     end)
+    check("WoW feedback: confirmed local incoming HP loss aggregates, expires and restores without drift", function()
+        local net=app.net; local oldState=net.state
+        local s=Addon.Model.new(); Addon.Model.addPlayer(s,1); Addon.Model.start(s); net.state=s
+        local p=s.players[1]; p.invuln=0; p.x=3
+        app.feedback:observe(false); ui.baseline=nil; ui.render()
+        now=now+0.3; s.time=s.time+0.3; ui.render()
+        local m=ui.monsters[1]; local baseX,baseY=m.drawX,m.drawY
+        p.hp=80; ui.render()
+        eq(ui.damageLabels[1].amount,20); eq(ui.damageLabels[1].font:GetText(),"YOU -20 HP")
+        assert(m.hurt:IsShown() and m.healthTrail:IsShown() and ui.healthTrail:IsShown())
+        eq(ui.healthTrail:GetWidth(),188); eq(ui.health:GetWidth(),188*0.8)
+        assert(ui.health.sublevel>ui.healthTrail.sublevel); assert(ui.bossBar.sublevel>ui.bossTrail.sublevel)
+        assert(m.health.sublevel>m.healthTrail.sublevel)
+        now=now+0.1; ui.render(); assert(m.recoilX<0 and math.abs(m.recoilX)<8)
+        eq(p.x,3); eq(p.y,0); eq(m.drawX,baseX); eq(m.drawY,baseY)
+        p.hp=70; ui.render(); eq(ui.damageLabels[1].amount,30)
+        local untilTime=ui.damageLabels[1].untilTime
+        for _=1,20 do ui.render() end
+        eq(ui.damageLabels[1].amount,30); eq(ui.damageLabels[1].untilTime,untilTime)
+        now=now+0.4; ui.render(); eq(m.recoilX,0); eq(m.recoilY,0)
+        eq(m.point[4],m.drawX/m.artScale); eq(m.point[5],m.drawY/m.artScale)
+        assert(not m.hurt:IsShown()); assert(ui.healthTrail:IsShown())
+        now=now+1; ui.render(); assert(not ui.damageLabels[1].font:IsShown()); assert(not ui.healthTrail:IsShown())
+        p.hp=100; ui.render(); assert(not m.hurt:IsShown()); assert(not ui.damageLabels[1].font:IsShown())
+        p.hp,p.ko=0,3; ui.render(); assert(not m.hurt:IsShown()); assert(not ui.damageLabels[1].font:IsShown())
+        p.hp,p.ko=100,0; ui.render(); assert(not m.hurt:IsShown()); eq(m.recoilX,0)
+        for _=1,30 do
+            p.hp=90; ui.render(); now=now+0.35; ui.render()
+            eq(m.point[4],m.drawX/m.artScale); eq(m.point[5],m.drawY/m.artScale)
+            p.hp=100; ui.render()
+        end
+        net.state=oldState; app.feedback:observe(false); ui.resetFeedback(); ui.render()
+    end)
+    check("WoW feedback: exact building/boss contact differs from air swing, numeric shield and range", function()
+        local net=app.net; local oldState,oldActionTime,oldBest=net.state,net.lastLocalAction,app.db.best
+        local s=Addon.Model.new(); Addon.Model.addPlayer(s,1); Addon.Model.start(s); net.state=s
+        local p=s.players[1]; p.invuln=0
+        bossFixture(s,"recover",5,5,5,{},1)
+        app.feedback:observe(false); ui.baseline=nil; ui.render()
+        assert(ui.bossLabel:GetText():find("10 / 10 HP",1,true)); assert(ui.bossLabel:GetText():find("SHIELDED",1,true))
+        assert(ui.bossLabel:GetText():find("9 floors",1,true))
+        net.lastLocalAction=nil; assert(app.input:action("P")); ui.render()
+        local cursor=ui.particleCursor
+        assert(ui.monsters[1].fist:IsShown()); assert(not ui.banner:IsShown())
+        for _,entry in ipairs(ui.damageLabels) do assert(not entry.font:IsShown()) end
+        assert(ui.feedbackStatus:GetText():find("shielded",1,true))
+        now=now+0.3; s.time=s.time+0.3; p.x=2
+        assert(app.input:action("P")); ui.render(); eq(s.hp[1],1)
+        assert(ui.floors[1].contact:IsShown()); eq(ui.particleCursor,(cursor+4)%72)
+        local found=false
+        for _,entry in ipairs(ui.damageLabels) do if entry.font:IsShown() then
+            eq(entry.font:GetText(),"YOU HIT -1 HP"); found=true
+        end end
+        assert(found); eq(p.score,10) -- fame is intentionally not the damage amount.
+        for i=1,9 do s.hp[i]=0 end
+        app.feedback:observe(false); ui.resetFeedback(); ui.clearParticles(); p.x=1; ui.render()
+        assert(ui.bossLabel:GetText():find("EXPOSED",1,true)); assert(ui.feedbackStatus:GetText():find("Out of range",1,true))
+        now=now+1.3; s.time=s.time+1.3; assert(app.input:action("P")); ui.render()
+        assert(not ui.damageLabels[2].font:IsShown()); assert(not ui.boss.hurt:IsShown())
+        p.x=5; now=now+0.3; s.time=s.time+0.3; ui.render()
+        assert(ui.feedbackStatus:GetText():find("range",1,true))
+        assert(app.input:action("P")); ui.render(); eq(s.boss,9)
+        eq(ui.damageLabels[2].font:GetText(),"YOU HIT -1 HP"); assert(ui.boss.hurt:IsShown()); assert(ui.bossTrail:IsShown())
+        eq(ui.bossBar:GetWidth(),364*0.9)
+        now=now+0.08; ui.render(); assert(ui.boss.recoilX<0)
+        now=now+0.3; ui.render(); eq(ui.boss.recoilX,0)
+        eq(ui.boss.point[4],ui.boss.drawX/ui.boss.artScale); eq(ui.boss.point[5],ui.boss.drawY/ui.boss.artScale)
+        s.boss=1; app.feedback:observe(false); ui.resetFeedback(); ui.render()
+        now=now+0.3; s.time=s.time+0.3; assert(app.input:action("P")); ui.render()
+        eq(s.phase,"clear"); eq(ui.damageLabels[2].font:GetText(),"YOU HIT -1 HP")
+        assert(ui.bossLabel:GetText():find("0 / 10 HP",1,true)); assert(not ui.boss.hurt:IsShown())
+        now=now+1; ui.render(); assert(not ui.damageLabels[2].font:IsShown())
+        net.state,net.lastLocalAction,app.db.best=oldState,oldActionTime,oldBest; app.feedback:observe(false); ui.resetFeedback(); ui.render()
+    end)
+    check("WoW feedback: remote totals are TEAM, duplicate/gap/stalled samples never catch up", function()
+        local net=app.net
+        local oldState,oldMode,oldSeq,oldSnap=net.state,net.mode,net.inSeq,net.lastSnapshot
+        local s=Addon.Model.new(); Addon.Model.addPlayer(s,1); Addon.Model.start(s)
+        for i=1,9 do s.hp[i]=0 end
+        bossFixture(s,"recover",5,5,5,{},1)
+        net.state,net.mode,net.inSeq,net.lastSnapshot=s,"client",10,now
+        app.feedback:observe(false); ui.resetFeedback(); ui.render()
+        assert(ui.bossLabel:GetText():find("SAMPLE",1,true)); assert(ui.bossGround.label:GetText():find("ESTIMATED",1,true))
+        now=now+1.25; s.time=s.time+1.25; net.inSeq,net.lastSnapshot=11,now
+        s.boss=7; s.players[1].hp=85; ui.render()
+        eq(ui.damageLabels[2].font:GetText(),"TEAM HIT -3 HP"); eq(ui.damageLabels[1].amount,15)
+        local cursor=ui.particleCursor
+        for _=1,10 do ui.render() end; eq(ui.damageLabels[2].amount,3); eq(ui.particleCursor,cursor)
+        now=now+4 -- no intermediate rendering: previous sample age must gate delivery.
+        s.time=s.time+4; net.inSeq,net.lastSnapshot=12,now; s.boss=5; ui.render()
+        assert(not ui.damageLabels[2].font:IsShown()); assert(not ui.boss.hurt:IsShown())
+        for _,particle in ipairs(ui.particles) do assert(not particle.start) end
+        now=now+1.25; s.time=s.time+1.25; net.inSeq,net.lastSnapshot=14,now; s.boss=4; ui.render()
+        assert(not ui.damageLabels[2].font:IsShown())
+        now=now+1.25; s.time=s.time+1.25; net.inSeq,net.lastSnapshot=15,now; s.boss=3; ui.render()
+        eq(ui.damageLabels[2].font:GetText(),"TEAM HIT -1 HP")
+        net.state,net.mode,net.inSeq,net.lastSnapshot=oldState,oldMode,oldSeq,oldSnap
+        app.feedback:observe(false); ui.resetFeedback(); ui.render()
+    end)
+    check("WoW feedback: reduced motion preserves static information and hide/KO/phase resets immediately", function()
+        local net=app.net; local oldState=net.state
+        local s=Addon.Model.new(); Addon.Model.addPlayer(s,1); Addon.Model.start(s); net.state=s
+        local p=s.players[1]; p.invuln=0; p.x=3
+        app.feedback:observe(false); ui.baseline=nil; ui.render(); now=now+0.4; ui.render()
+        p.hp=70; ui.render(); now=now+0.08; ui.render(); assert(ui.monsters[1].recoilX<0)
+        click(ui.reducedMotion); assert(app.db.reducedMotion and RampageDB.reducedMotion)
+        local m=ui.monsters[1]; eq(m.recoilX,0); eq(m.recoilY,0)
+        eq(m.point[4],m.drawX/m.artScale); eq(m.point[5],m.drawY/m.artScale)
+        assert(ui.damageLabels[1].font:IsShown() and ui.healthTrail:IsShown())
+        eq(m.legL.point[5],1); eq(m.legR.point[5],1)
+        p.x=4; ui.render(); eq(m.drawX,31+3*95-17)
+        local numberY=ui.damageLabels[1].font.point[5]
+        now=now+0.1; ui.render(); eq(ui.damageLabels[1].font.point[5],numberY)
+        for _,particle in ipairs(ui.particles) do assert(not particle.start) end
+        ui.root:Hide(); eq(m.recoilX,0); assert(not m.hurt.shown and not m.healthTrail.shown)
+        for _,entry in ipairs(ui.damageLabels) do assert(not entry.font.shown) end
+        p.hp=50; ui.root:Show(); ui.render(); assert(not ui.damageLabels[1].font:IsShown())
+        p.hp=40; ui.render(); assert(ui.damageLabels[1].font:IsShown())
+        p.ko=3; ui.render(); assert(not ui.damageLabels[1].font:IsShown()); assert(not m.hurt:IsShown()); eq(m.recoilX,0)
+        p.hp,p.ko=100,0; ui.render(); p.hp=80; ui.render(); assert(ui.damageLabels[1].font:IsShown())
+        s.phase="clear"; ui.render(); assert(not ui.damageLabels[1].font:IsShown()); assert(not m.healthTrail:IsShown())
+        click(ui.reducedMotion); eq(RampageDB.reducedMotion,false)
+        net.state=oldState; app.feedback:observe(false); ui.resetFeedback(); ui.render()
+    end)
+    check("WoW feedback: Brawl highlight follows lowest eligible same-height adjacent slot", function()
+        local net=app.net; local oldState,oldActionTime=net.state,net.lastLocalAction
+        local s=Addon.Model.new("brawl"); for slot=1,4 do Addon.Model.addPlayer(s,slot) end; Addon.Model.start(s)
+        net.state=s; net.lastLocalAction=nil
+        for _,p in pairs(s.players) do p.x,p.y,p.invuln=3,0,0 end
+        s.players[2].y=1
+        app.feedback:observe(false); ui.render()
+        assert(not ui.monsters[2].target:IsShown()); assert(ui.monsters[3].target:IsShown()); assert(not ui.monsters[4].target:IsShown())
+        assert(ui.feedbackStatus:GetText():find("lowest eligible slot",1,true))
+        s.players[2].y=0; ui.render(); assert(ui.monsters[2].target:IsShown()); assert(not ui.monsters[3].target:IsShown())
+        s.players[2].invuln=1; s.players[3].x=6; ui.render(); assert(ui.monsters[4].target:IsShown())
+        net.state,net.lastLocalAction=oldState,oldActionTime; app.feedback:observe(false); ui.resetFeedback(); ui.render()
+    end)
+    check("WoW feedback: remote slot reuse clears old hurt and combat restores all active transforms", function()
+        local net=app.net; local oldState,oldMember,oldParticipant=net.state,net.members[2],net.participants[2]
+        local s=Addon.Model.new(); Addon.Model.addPlayer(s,1); Addon.Model.addPlayer(s,2); Addon.Model.start(s)
+        net.state=s; net.members[2]={name="Old-Realm"}; net.participants[2]={name="Old-Realm",slot=2,role="play"}
+        app.feedback:observe(false); ui.baseline=nil; ui.render(); now=now+0.3; ui.render()
+        s.players[2].hp=70; ui.render(); now=now+0.08; ui.render()
+        assert(ui.monsters[2].hurt:IsShown()); assert(ui.monsters[2].recoilX<0)
+        net.members[2]={name="New-Realm"}; net.participants[2]={name="New-Realm",slot=2,role="play"}
+        ui.render(); assert(not ui.monsters[2].hurt:IsShown()); eq(ui.monsters[2].recoilX,0)
+        for _,entry in ipairs(ui.damageLabels) do assert(entry.slot~=2 or not entry.font:IsShown()) end
+        s.players[2].hp=60; ui.render(); assert(ui.monsters[2].hurt:IsShown())
+        net.participants[2].generation=2; ui.render()
+        assert(not ui.monsters[2].hurt:IsShown(),"same-name rejoin generation must clear former actor FX")
+        s.players[1].hp=70; ui.render(); now=now+0.08; ui.render(); assert(ui.monsters[1].recoilX<0)
+        combat=true; event("PLAYER_REGEN_DISABLED")
+        local m=ui.monsters[1]; eq(m.recoilX,0); eq(m.point[4],m.drawX/m.artScale); eq(m.point[5],m.drawY/m.artScale)
+        assert(not m.hurt.shown and not ui.healthTrail.shown)
+        for _,entry in ipairs(ui.damageLabels) do assert(not entry.font.shown) end
+        combat=false; event("PLAYER_REGEN_ENABLED"); assert(ui.root:IsShown()); assert(not m.hurt:IsShown())
+        net.state,net.members[2],net.participants[2]=oldState,oldMember,oldParticipant
+        app.feedback:observe(false); ui.resetFeedback(); ui.render()
+    end)
     check("WoW mock: keyboard opt-in, bounded hold repeat, unknown/chat keys propagate", function()
         local input, calls, action = app.input, {}, app.net.action
         app.net.action = function(_, key) calls[#calls+1] = key; return true end
@@ -281,15 +440,27 @@ function runWoWSmoke()
         local frameCount, textureCount, fontCount = #frames, #textures, #fonts
         eq(#ui.hazardLanes,7); eq(#ui.particles,72); eq(#ui.bossCues,4)
         for _,cue in ipairs(ui.bossCues) do eq(#cue.parts,12) end
-        for slot=2,25 do Addon.Model.addPlayer(app.net.state,slot); app.net.members[slot]={name="Crew"..slot.."-Realm"} end
+        eq(#ui.damageLabels,12)
+        for slot=2,25 do
+            Addon.Model.addPlayer(app.net.state,slot); app.net.members[slot]={name="Crew"..slot.."-Realm"}
+            app.net.participants[slot]={name="Crew"..slot.."-Realm",slot=slot,role="play"}
+        end
+        local sawFeedback=false
         for i=1,500 do
-            for slot=1,25 do local p=app.net.state.players[slot]; p.hit=i%1000; p.x=1+(slot+i)%7 end
-            app.net.state.stage=1+(i-1)%4
+            for slot=1,25 do
+                local p=app.net.state.players[slot]; p.hit=i%1000; p.x=1+(slot+i)%7
+                p.hp,p.ko,p.invuln=i%20==1 and 100 or math.max(1,p.hp-1),0,0
+            end
+            app.net.state.stage=1+math.floor((i-1)/125)%4
             bossFixture(app.net.state,i%3==0 and "attack" or "windup",i%3==0 and 0.3 or 6,4,4,{1,3,7},i)
             -- Exactly 500 UI renders; no adapter OnUpdate secretly doubles them.
             now=now+0.05; ui.burst(316,180,12,"hit"); ui.render()
+            if ui.damageLabels[1].font:IsShown() then sawFeedback=true end
+            local shown=0; for _,entry in ipairs(ui.damageLabels) do if entry.font:IsShown() then shown=shown+1 end end
+            assert(shown<=12)
         end
-        for slot=2,25 do Addon.Model.removePlayer(app.net.state,slot); app.net.members[slot]=nil end
+        assert(sawFeedback,"500-render fixture must exercise real confirmed feedback")
+        for slot=2,25 do Addon.Model.removePlayer(app.net.state,slot); app.net.members[slot]=nil; app.net.participants[slot]=nil end
         app.net.state.stage=1; bossFixture(app.net.state,"patrol",5,4,5,{})
         eq(#frames, frameCount); eq(#textures, textureCount); eq(#fonts, fontCount)
         print("  Fixed UI allocation fixture: " .. frameCount .. " frames, " .. textureCount .. " textures, " .. fontCount .. " font strings; exactly 500 renders, 48 boss-cue textures")
@@ -674,12 +845,54 @@ function runWoWSmoke()
     end)
 end
 
+-- Authoritative transition sequence: before -> real M.damage + Input punch ->
+-- impact at +0.08s -> settle at +1.4s. Reduced is the SAME impact with motion off.
+local function prepareHitPreview(scene)
+    local app,ui=Addon.App,Addon.UI; local net=app.net; local s=net.state
+    assert(app.feedback,"feedback module must load from the real TOC")
+    s.stage,s.boss=1,10
+    for i=1,9 do s.hp[i]=scene=="hit-shield" and (i==1 and 1 or 2) or 0 end
+    for slot=2,4 do Addon.Model.addPlayer(s,slot); net.members[slot]={name="Crew"..slot.."-Realm"} end
+    for slot,p in pairs(s.players) do p.x,p.y,p.invuln,p.score=slot+2,0,0,120 end
+    s.players[1].x=4
+    bossFixture(s,"recover",5,4,4,{},3)
+    app.feedback:observe(false); ui.baseline=nil; ui.resetFeedback(); ui.render()
+    now=now+0.4; s.time=s.time+0.4; ui.render()
+    if scene~="hit-before" and scene~="hit-shield" then
+        local p=s.players[1]
+        if scene=="hit-team" then
+            net.mode,net.hostName,net.sid,net.inSeq,net.lastSnapshot="client","Toast-Realm","feedback-preview",10,now
+            s._activeCount,s._spectators,s._botCount=4,0,0
+            net.status="Joined as player: sampled team damage, no per-attacker network receipt."
+            app.feedback:observe(false); ui.render()
+            eq(net:count(),4); assert(ui.lobby:GetText():find("4/25 actors",1,true))
+            now=now+1.25; s.time=s.time+1.25; net.inSeq,net.lastSnapshot=11,now
+            s.boss=7; p.hp=80; ui.render()
+            eq(ui.damageLabels[2].font:GetText(),"TEAM HIT -3 HP")
+        else
+            assert(Addon.Model.damage(s,1,20)); ui.render(); eq(p.hp,80)
+            net.lastLocalAction=nil; assert(app.input:action("P")); ui.render()
+            eq(s.boss,9); eq(ui.damageLabels[2].font:GetText(),"YOU HIT -1 HP")
+        end
+        now=now+0.08; ui.render()
+        if scene=="hit-settle" then
+            now=now+1.4; ui.render()
+            eq(ui.monsters[1].recoilX,0); assert(not ui.damageLabels[1].font:IsShown())
+        elseif scene=="hit-reduced" then
+            click(ui.reducedMotion); assert(app.db.reducedMotion)
+            eq(ui.monsters[1].recoilX,0); eq(ui.boss.recoilX,0)
+            assert(ui.damageLabels[1].font:IsShown() and ui.healthTrail:IsShown())
+        else assert(ui.damageLabels[1].font:IsShown()) end
+    end
+    app.input:grab(); ui.render()
+end
 -- Reusable preview fixtures execute the real addon, then capture its actual shapes.
 -- Not gameplay/network evidence and not a screenshot from the WoW client.
 function prepareWoWPreview(scene)
     event("ADDON_LOADED", "Rampage"); loggedIn=true; event("PLAYER_LOGIN")
     SlashCmdList.RAMPAGE((scene=="brawl" or scene=="ko") and "solo brawl" or "solo")
     local app,ui=Addon.App,Addon.UI
+    if scene:sub(1,4)=="hit-" then prepareHitPreview(scene); return end
     local s=app.net.state
     local motionScene=scene=="boss-patrol" or scene=="boss-windup" or scene=="boss-impact"
     s.stage=scene=="solo" and 3 or scene=="hazard" and 2 or motionScene and 1 or 4; s.boss=8+s.stage*2
