@@ -4,6 +4,12 @@
 local _, addon = ...
 local UI = { WIDTH = 900, HEIGHT = 660, MAX = 25 }
 addon.UI = UI
+-- One compact grid, in root coordinates. Text changes never size a control.
+local layout = { margin=20, gap=8, buttonH=30, headerY=20, actionY=478,
+    inputY=538, inputLabelY=519, captureY=580, feedbackY=607, footerY=638,
+    cityX=20, cityY=202, cityW=632, cityH=354, crewX=672, crewW=208,
+    crewInset=10, crewInner=188, segmentW=112, segmentGap=2, actionX=272 }
+UI.layout=layout
 local palette = { {0.37,0.88,0.61}, {1,0.61,0.32}, {0.58,0.69,1}, {1,0.49,0.66}, {0.91,0.79,0.38} }
 local bossPalette = { {0.92,0.60,0.25}, {0.56,0.73,0.79}, {0.87,0.35,0.49}, {0.65,0.48,0.85} }
 local hazardFlavor = { "CRUMB THROW", "PERMIT BEAM", "GROUND STOMP", "THREE-COLUMN BARRAGE" }
@@ -42,9 +48,9 @@ local function hover(frame, title, body)
 end
 local function button(parent, label, x, y, width, callback, primary)
     local b = CreateFrame("Button", nil, parent)
-    b:SetSize(width, 30); b:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y); b:EnableMouse(true)
-    b.base = rect(b, 0,0,width,30, primary and 0.86 or 0.23, primary and 0.43 or 0.21, primary and 0.19 or 0.23)
-    b.edge=rect(b,0,29,width,1,1,0.75,0.42,primary and 0.9 or 0.35)
+    b:SetSize(width, layout.buttonH); b:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y); b:EnableMouse(true)
+    b.base = rect(b, 0,0,width,layout.buttonH, primary and 0.86 or 0.23, primary and 0.43 or 0.21, primary and 0.19 or 0.23)
+    b.edge=rect(b,0,layout.buttonH-1,width,1,1,0.75,0.42,primary and 0.9 or 0.35)
     b.label = text(b,12,3,-8,width-6,"CENTER"); b.label:SetText(label)
     b.primary=primary
     function b:paint()
@@ -62,6 +68,33 @@ local function button(parent, label, x, y, width, callback, primary)
     b:SetScript("OnLeave", function(self) self.hovered,self.pressed=false,false; self:paint() end)
     b:paint()
     return b
+end
+-- Original flat segmented controls: inset fill, a four-sided keyline and a
+-- small solid indicator. No radio glyphs, templates, skins or asset textures.
+local function segment(parent, title, x, y, callback)
+    local w,h=layout.segmentW,layout.buttonH
+    local b=button(parent,title,x,y,w,callback)
+    b.base:SetColorTexture(0.14,0.13,0.16,1); b.edge:Hide()
+    b.selectedFill=rect(b,1,1,w-2,h-2,0.19,0.34,0.29,1,"ARTWORK",1)
+    b.selectedBorder={rect(b,0,0,w,1,0.49,0.80,0.64,1,"OVERLAY",0),
+        rect(b,0,h-1,w,1,0.49,0.80,0.64,1,"OVERLAY",0),
+        rect(b,0,1,1,h-2,0.49,0.80,0.64,1,"OVERLAY",0),
+        rect(b,w-1,1,1,h-2,0.49,0.80,0.64,1,"OVERLAY",0)}
+    b.indicator=rect(b,12,12,6,6,0.63,0.97,0.74,1,"OVERLAY",1)
+    b.label:ClearAllPoints(); b.label:SetPoint("TOPLEFT",b,"TOPLEFT",25,-8)
+    b.label:SetWidth(w-32); b.label:SetJustifyH("LEFT")
+    function b:paint()
+        local on=self:IsEnabled()
+        local gain=self.pressed and 0.8 or self.hovered and 1.15 or 1
+        self.base:SetColorTexture(0.14*gain,0.13*gain,0.16*gain,1)
+        self.selectedFill:SetAlpha(self.selected and (self.pressed and 0.75 or 1) or 0)
+        for _,edge in ipairs(self.selectedBorder) do edge:SetAlpha(self.selected and 1 or self.hovered and 0.65 or 0.18) end
+        self.indicator:SetAlpha(self.selected and 1 or 0)
+        self.label:SetTextColor(self.selected and 0.89 or 0.79,self.selected and 1 or 0.77,self.selected and 0.90 or 0.72)
+        -- The selected Mouse state stays legible even if gameplay is unavailable.
+        self:SetAlpha(on and 1 or self.selected and 0.75 or 0.42)
+    end
+    b:paint(); return b
 end
 local function label(b, value) b.label:SetText(value) end
 local function enabled(b, yes)
@@ -158,12 +191,12 @@ function UI.create(app)
     text(root,10,76,-16,450):SetText("TOAST  /  POCKET ARCADE")
     text(root,25,75,-30,450):SetText("RAMPAGE")
     UI.modeLabel=text(root,11,250,-39,340)
-    UI.infoButton=button(root,"INFO",642,-21,88,function() UI.setPanel("info") end)
-    UI.settingsButton=button(root,"SETTINGS",738,-21,102,function() UI.setPanel("settings") end)
-    UI.close = button(root,"X",850,-16,30,function() root:Hide() end)
+    UI.infoButton=button(root,"INFO",642,-layout.headerY,88,function() UI.setPanel("info") end)
+    UI.settingsButton=button(root,"SETTINGS",738,-layout.headerY,104,function() UI.setPanel("settings") end)
+    UI.close = button(root,"X",UI.WIDTH-layout.margin-30,-layout.headerY,30,function() root:Hide() end)
     hover(UI.close,"Close window","Releases keyboard. Does not leave the game. /rampage reopens it.")
     UI.selectedMode="brawl"
-    UI.primary = button(root,"Host Brawl",20,-478,164,function()
+    UI.primary = button(root,"Host Brawl",layout.margin,-layout.actionY,164,function()
         local net,s=app.net,app.net.state
         if net.mode=="idle" then
             if UI.displayedLobby then app.joinFight() else app.hostGame() end
@@ -176,16 +209,16 @@ function UI.create(app)
     end,true)
     UI.join,UI.host,UI.start=UI.primary,UI.primary,UI.primary
     hover(UI.primary,"Brawl / player-versus-player","Join fight explicitly opts into PvP. Leave fight returns to watching without leaving the room. Starting never captures keyboard input.")
-    UI.solo=button(root,"Solo practice",196,-478,144,function() app.soloGame(); UI.render() end)
-    UI.fight=button(root,"Join fight",196,-478,144,function()
+    UI.solo=button(root,"Solo practice",196,-layout.actionY,144,function() app.soloGame(); UI.render() end)
+    UI.fight=button(root,"Join fight",196,-layout.actionY,144,function()
         if app.net.role=="spectate" then app.joinFight() else app.leaveFight() end
         UI.render()
     end)
-    UI.roomHint=text(root,12,360,-483,518)
-    rect(root,20,140,860,1,0.45,0.34,0.32,0.45)
-    UI.lobby=text(root,12,21,-75,859)
+    UI.roomHint=text(root,12,360,-layout.actionY-8,UI.WIDTH-layout.margin-360)
+    rect(root,layout.margin,144,UI.WIDTH-layout.margin*2,1,0.45,0.34,0.32,0.45)
+    UI.lobby=text(root,12,layout.margin,-75,UI.WIDTH-layout.margin*2)
     local city = CreateFrame("Frame",nil,root); UI.city=city
-    city:SetSize(632,354); city:SetPoint("BOTTOMLEFT",root,"BOTTOMLEFT",20,202)
+    city:SetSize(layout.cityW,layout.cityH); city:SetPoint("BOTTOMLEFT",root,"BOTTOMLEFT",layout.cityX,layout.cityY)
     -- Warm dusk bands, long-distance skyline, lamps and a raised two-tone street.
     for i=0,11 do rect(city,0,i*29.5,632,30,0.19+i*0.012,0.13+i*0.006,0.21+i*0.005,1,"BACKGROUND") end
     rect(city,543,244,52,50,0.98,0.63,0.34,0.85,"BACKGROUND")
@@ -273,7 +306,9 @@ function UI.create(app)
     UI.bossGround.left=rect(UI.bossGround,0,7,2,8,1,0.84,0.4)
     UI.bossGround.right=rect(UI.bossGround,188,7,2,8,1,0.84,0.4)
     UI.bossGround.center=rect(UI.bossGround,91,9,8,5,1,0.84,0.4)
-    UI.bossGround.label=text(UI.bossGround,9,0,-18,190,"CENTER")
+    UI.bossGround.label=text(UI.bossGround,9,0,-15,190,"CENTER")
+    -- Ground rail is the sole street label; the sprite badge would overlap it.
+    UI.boss.badge:Hide()
     UI.boss.crown=rect(UI.boss,14,59,22,5,1,0.80,0.37)
     for i=1,3 do rect(UI.boss,12+i*6,64,4,6+i%2*3,1,0.80,0.37) end
     UI.monsters={}
@@ -308,9 +343,9 @@ function UI.create(app)
     rect(UI.banner,0,64,430,2,1,0.66,0.30); UI.banner.title=text(UI.banner,23,8,-10,414,"CENTER")
     UI.banner.sub=text(UI.banner,11,8,-39,414,"CENTER"); UI.banner:Hide()
     local crew=CreateFrame("Frame",nil,root); UI.crew=crew
-    crew:SetSize(208,354); crew:SetPoint("BOTTOMLEFT",root,"BOTTOMLEFT",672,202)
+    crew:SetSize(layout.crewW,layout.cityH); crew:SetPoint("BOTTOMLEFT",root,"BOTTOMLEFT",layout.crewX,layout.cityY)
     rect(crew,0,0,208,354,0.14,0.12,0.15,1,"BACKGROUND")
-    UI.crewTitle=text(crew,14,12,-12,184); UI.crewSub=text(crew,11,12,-33,184)
+    UI.crewTitle=text(crew,14,layout.crewInset,-12,layout.crewInner); UI.crewSub=text(crew,11,layout.crewInset,-33,layout.crewInner)
     UI.scores={}
     for slot=1,25 do
         local c,n=color(slot),slot
@@ -323,27 +358,30 @@ function UI.create(app)
         UI.scores[slot]=chip
     end
     rect(crew,10,106,188,1,0.45,0.34,0.32,0.45)
-    UI.personal=text(crew,15,12,-260,184); UI.team=text(crew,11,12,-282,184); UI.best=text(crew,10,12,-339,184)
-    text(root,10,21,-521,218):SetText("INPUT MODE")
-    UI.mouseMode=button(root,"Mouse",20,-539,104,function()
-        app.input:release("Mouse mode — keyboard released"); UI.render()
+    UI.personal=text(crew,15,layout.crewInset,-256,layout.crewInner)
+    UI.team=text(crew,11,layout.crewInset,-280,layout.crewInner)
+    UI.best=text(crew,10,layout.crewInset,-336,layout.crewInner)
+    UI.inputLabel=text(root,10,layout.margin,-layout.inputLabelY,226); UI.inputLabel:SetText("INPUT MODE")
+    UI.actionLabel=text(root,10,layout.actionX,-layout.inputLabelY,380); UI.actionLabel:SetText("MOUSE ACTIONS")
+    UI.mouseMode=segment(root,"Mouse",layout.margin,-layout.inputY,function()
+        app.captureAfterJoin=false; app.input:setPreference("mouse"); UI.render()
     end)
-    UI.keyboardMode=button(root,"Keyboard",126,-539,118,function()
-        if not app.input.focused then app.input:grab() end; UI.render()
+    UI.keyboardMode=segment(root,"Keyboard",layout.margin+layout.segmentW+layout.segmentGap,-layout.inputY,function()
+        app.input:setPreference("keyboard"); UI.render()
     end)
-    UI.capture=UI.keyboardMode -- compatibility handle; this is a radio, never a toggle.
-    hover(UI.mouseMode,"Mouse controls","Use the five action buttons. WoW keeps normal keyboard input.")
-    hover(UI.keyboardMode,"Keyboard controls","Explicit fighter opt-in. WASD / arrows move; Space punches. Escape, chat, focus loss, panels and combat release capture. Nothing recaptures automatically.")
-    UI.captureStatus=text(root,12,21,-583,858)
-    UI.healthBack=rect(crew,10,39,188,9,0.045,0.04,0.06,1,"ARTWORK",0)
-    UI.healthTrail=rect(crew,10,39,188,9,1,0.72,0.38,1,"ARTWORK",1); UI.healthTrail:Hide()
-    UI.health=rect(crew,10,39,188,9,0.38,0.88,0.45,1,"ARTWORK",2)
-    UI.healthLabel=text(crew,11,7,-320,194,"CENTER")
+    UI.capture=UI.keyboardMode -- compatibility handle; selected means preference, status states capture.
+    hover(UI.mouseMode,"Mouse preference","Choose before joining or while playing. Uses action buttons and immediately releases captured keys.")
+    hover(UI.keyboardMode,"Keyboard preference","Choose safely while idle or watching: no avatar, join or key capture. Explicit Join fight may activate WASD/arrows + Space after the fighter role is accepted. Safety releases stay inactive until you select Keyboard again or explicitly rejoin.")
+    UI.captureStatus=text(root,12,layout.margin,-layout.captureY,UI.WIDTH-layout.margin*2)
+    UI.healthBack=rect(crew,layout.crewInset,27,layout.crewInner,9,0.045,0.04,0.06,1,"ARTWORK",0)
+    UI.healthTrail=rect(crew,layout.crewInset,27,layout.crewInner,9,1,0.72,0.38,1,"ARTWORK",1); UI.healthTrail:Hide()
+    UI.health=rect(crew,layout.crewInset,27,layout.crewInner,9,0.38,0.88,0.45,1,"ARTWORK",2)
+    UI.healthLabel=text(crew,11,layout.crewInset,-299,layout.crewInner)
     UI.controls={}
     local labels,actions={"A/Left","W/Up","Space","S/Down","D/Right"},{"L","U","P","D","R"}
     for i=1,5 do
         local action=actions[i]
-        UI.controls[i]=button(root,labels[i],268+(i-1)*68,-539,62,function() app.input:action(action); UI.render() end)
+        UI.controls[i]=button(root,labels[i],layout.actionX+(i-1)*76,-layout.inputY,68,function() app.input:action(action); UI.render() end)
         hover(UI.controls[i],"Mouse action: "..action,"One action per click. For held movement choose Keyboard. Punches target eligible rivals before the city or boss in Brawl.")
     end
     -- One bounded modal pool; instructions and infrequent controls leave the city clear.
@@ -393,11 +431,19 @@ function UI.create(app)
     hover(UI.leave,"Leave this room","Exits membership and stops auto-watching until you reopen Rampage. A departing host transfers to the oldest remaining participant when possible.")
     text(settings,11,178,-304,322):SetText("Close hides. Leave exits the room.")
     UI.panel:Hide()
-    UI.feedbackStatus=text(root,11,21,-611,858)
-    UI.status=text(root,10,21,-639,858)
+    UI.feedbackStatus=text(root,11,layout.margin,-layout.feedbackY,UI.WIDTH-layout.margin*2)
+    rect(root,layout.margin,31,UI.WIDTH-layout.margin*2,1,0.45,0.34,0.32,0.35)
+    UI.status=text(root,10,layout.margin,-layout.footerY,508)
+    UI.footerHint=text(root,10,548,-layout.footerY,332,"RIGHT")
+    UI.footerHint:SetText("Close hides  /  Settings > Leave game exits")
     app.input=addon.Input.create(app,root)
+    -- Input owns routing. These ordinary frame visibility callbacks only paint
+    -- the real capture state immediately, including safety release/key events.
+    app.input.frame:SetScript("OnShow",function() UI.syncInputSelection() end)
+    app.input.frame:SetScript("OnHide",function() UI.syncInputSelection() end)
     root:SetScript("OnHide",function()
-        app.input:release("Window hidden — keys released")
+        app.captureAfterJoin=false
+        app.input:release("Window hidden - keys released")
         UI.closePanels()
         if app.feedback then app.feedback:observe(false) end
         UI.resetFeedback(); UI.baseline=nil; UI.resetBossVisuals(); UI.clearParticles()
@@ -406,6 +452,11 @@ function UI.create(app)
     root:SetScript("OnShow",function() UI.fit(); UI.baseline=nil; UI.resetFeedback(); UI.resetBossVisuals(); UI.clearParticles(); app.input:shown() end)
     UI.fit(); root:Hide(); return root
 end
+function UI.syncInputSelection()
+    local input=UI.app and UI.app.input
+    local preference=input and input.preference or "keyboard"
+    selected(UI.mouseMode,preference=="mouse"); selected(UI.keyboardMode,preference=="keyboard")
+end
 function UI.closePanels()
     UI.panelOpen=nil
     if UI.panel then UI.panel:Hide() end
@@ -413,7 +464,7 @@ end
 function UI.setPanel(kind)
     if not UI.root or not UI.root:IsShown() or UI.app.net.combat then return false end
     if kind~=nil and kind~="info" and kind~="settings" then return false end
-    if kind and UI.app.input then UI.app.input:release("Panel open — keyboard released") end
+    if kind and UI.app.input then UI.app.captureAfterJoin=false; UI.app.input:release("Panel open - keyboard released") end
     UI.panelOpen=kind
     show(UI.panel,kind~=nil)
     show(UI.infoContent,kind=="info"); show(UI.settingsContent,kind=="settings")
@@ -896,11 +947,11 @@ function UI.render()
     UI.best:SetText("Personal best  "..(app.db.best or 0))
     local showHealth=localP~=nil and not spectator
     show(UI.healthBack,showHealth); show(UI.health,showHealth); show(UI.healthLabel,showHealth)
-    health(UI.health,localP,188)
+    health(UI.health,localP,layout.crewInner)
     local localMonster=net.slot and UI.monsters[net.slot]
     local localTrail=showHealth and localMonster and now<(localMonster.trailUntil or 0)
     show(UI.healthTrail,localTrail)
-    if localTrail then UI.healthTrail:SetWidth(188*math.min(1,localMonster.trailHP/(localP.maxHP or 100))) end
+    if localTrail then UI.healthTrail:SetWidth(layout.crewInner*math.min(1,localMonster.trailHP/(localP.maxHP or 100))) end
     if showHealth then
         UI.healthLabel:SetText((localP.ko or 0)>0 and ("KO - respawn in "..math.ceil(localP.ko).."s")
             or ((localP.hp or 100).." / "..(localP.maxHP or 100).." HP"..((localP.invuln or 0)>0 and (" • SHIELD "..math.ceil(localP.invuln).."s") or "")))
@@ -988,17 +1039,19 @@ function UI.render()
         UI.burst(316,185,s.phase=="victory" and 50 or 25,s.phase=="victory" and "victory" or "dust")
     elseif previous and s and previous.stage~=s.stage then UI.burst(316,260,24,"victory") end
     UI.stageText:SetText(s and (modeName(gameMode).." • CITY "..s.stage.." / 4   •   "..string.upper(addon.Model.BOSSES[stage])) or "SMASH THE CITY. MAKE TOAST PROUD.")
-    enabled(UI.mouseMode,not net.combat); selected(UI.mouseMode,not app.input.focused)
-    enabled(UI.keyboardMode,not UI.panelOpen and not spectator and (canPlay or app.input.focused)); selected(UI.keyboardMode,app.input.focused)
-    label(UI.mouseMode,not app.input.focused and "[o] Mouse" or "[ ] Mouse")
-    label(UI.keyboardMode,app.input.focused and "[o] Keyboard" or "[ ] Keyboard")
-    UI.captureStatus:SetText(spectator and "WATCH ONLY  •  No avatar. No captured keys."
-        or app.input.focused and (s and s.phase=="clear" and "KEYBOARD ON  •  Next city incoming; release held keys before moving." or "KEYBOARD ON  •  WASD / arrows to move, Space to punch. Esc releases.")
-        or localP and (localP.ko or 0)>0 and ("KO  •  Respawn in "..math.ceil(localP.ko).."s. Keyboard stays off.")
-        or localP and "MOUSE MODE  •  Click an action, or select Keyboard to capture keys."
-        or "KEYBOARD OFF  •  Join a fight to enable controls.")
+    enabled(UI.mouseMode,not net.combat and not UI.panelOpen)
+    enabled(UI.keyboardMode,not net.combat and not UI.panelOpen); UI.syncInputSelection()
+    local keyboardPreferred=app.input.preference=="keyboard"
+    UI.captureStatus:SetText(app.input.focused and (s and s.phase=="clear" and "KEYBOARD ACTIVE  •  Next city incoming; release held keys before moving." or "KEYBOARD ACTIVE  •  WASD / arrows to move, Space to punch. Esc releases.")
+        or spectator and (keyboardPreferred and "KEYBOARD PREFERRED  •  Watching; no avatar or captured keys. Join fight to activate." or "MOUSE PREFERRED  •  Watching; no avatar or captured keys.")
+        or localP and (localP.ko or 0)>0 and ((keyboardPreferred and "KEYBOARD PREFERRED" or "MOUSE PREFERRED").."  •  KO; controls inactive for "..math.ceil(localP.ko).."s.")
+        or localP and keyboardPreferred and "KEYBOARD PREFERRED  •  Inactive. Select Keyboard to capture safely."
+        or localP and "MOUSE PREFERRED  •  Click an action; Keyboard remains inactive."
+        or keyboardPreferred and "KEYBOARD PREFERRED  •  No fighter role; no captured keys."
+        or "MOUSE PREFERRED  •  No fighter role; action buttons inactive.")
     UI.captureStatus:SetTextColor(app.input.focused and 0.50 or 0.83,app.input.focused and 0.96 or 0.79,app.input.focused and 0.65 or 0.70)
     for _,b in ipairs(UI.controls) do show(b,localP~=nil and not spectator and not app.input.focused); enabled(b,canPlay and not UI.panelOpen) end
+    show(UI.actionLabel,localP~=nil and not spectator and not app.input.focused)
     label(UI.audio,app.db.useBlasterMaster and "Local BM: ON" or "Local BM: OFF")
     selected(UI.audio,app.db.useBlasterMaster); selected(UI.mute,app.db.muted)
     label(UI.mute,app.db.muted and "UNMUTE RAMPAGE" or "Mute Rampage")
@@ -1009,8 +1062,8 @@ function UI.render()
         or ((net.mode=="client" and "SAMPLED / estimated • " or "")..rangeHelp.." • HP loss, not fame • YOU: exact hit / TEAM: total")))
     if idle or spectator then UI.feedbackStatus:SetText("HIT RECEIPTS  •  YOU HIT = confirmed local damage  /  TEAM HIT = sampled team damage") end
     local status=net.status or ""
-    if #status>88 then status=string.sub(status,1,85).."..." end
-    UI.status:SetText(status.."  •  Close hides; Settings > Leave game exits")
+    if #status>78 then status=string.sub(status,1,75).."..." end
+    UI.status:SetText(status)
     UI.baseline=s and {stage=s.stage,phase=s.phase,sid=net.sid,epoch=s._epoch or net.inputEpoch or 0,seq=net.inSeq or 0,hp={}} or nil
     if s then for i=1,9 do UI.baseline.hp[i]=s.hp[i] end end
     UI.effects(now); UI.feedbackEffects(now)

@@ -150,16 +150,16 @@ check("model: all four bosses repeatedly telegraph real lane damage before and a
     for stage = 1, 4 do
         local s = active(); s.stage, s.phase, s.wait = stage-1, "clear", 0.1; M.tick(s, 0.1); M.tick(s, M.PATROL_TIME)
         local h, p = s.hazard, s.players[1]
-        eq(h.phase, "warning"); assert(h.remaining >= 6.999)
+        eq(h.phase, "warning"); assert(h.remaining >= 2.999)
         patterns[stage] = table.concat(h.lanes, ",")
         p.x, p.invuln = h.lanes[1], 0
-        M.tick(s, 3); M.tick(s, 3); eq(p.hp, 100); eq(h.phase, "warning")
+        M.tick(s, 1); M.tick(s, 1); eq(p.hp, 100); eq(h.phase, "warning")
         M.tick(s, 1); eq(h.phase, "impact"); eq(p.hp, 65)
         assert(p.x ~= h.lanes[1] or p.x == 1 or p.x == 7)
         M.tick(s, M.IMPACT_TIME); eq(h.phase, "idle"); M.tick(s, M.HAZARD_COOLDOWN); eq(s.bossMotion.phase, "patrol"); M.tick(s, M.PATROL_TIME); eq(s.hazard.phase, "warning")
         local id = s.hazard.id; for i = 1, 9 do s.hp[i] = 0 end
         p.x, p.invuln = s.hazard.lanes[1], 0
-        M.tick(s, 5); M.tick(s, 2); eq(p.hp, 30)
+        M.tick(s, 2); M.tick(s, 1); eq(p.hp, 30)
         M.tick(s, M.IMPACT_TIME); M.tick(s, M.HAZARD_COOLDOWN); assert(s.hazard.id > id)
     end
     assert(patterns[1] ~= patterns[2] and patterns[2] ~= patterns[3] and patterns[3] ~= patterns[4])
@@ -170,7 +170,7 @@ check("model: stationary bot can be hurt and KO'd; deterministic AI alone clears
     for _ = 1, 3 do
         M.tick(s, M.PATROL_TIME); eq(s.hazard.phase, "warning")
         p.x = s.hazard.lanes[1]; p.invuln = 0
-        M.tick(s, 5); M.tick(s, 2)
+        M.tick(s, 2); M.tick(s, 1)
         if p.ko == 0 then M.tick(s, M.IMPACT_TIME); M.tick(s, M.HAZARD_COOLDOWN) end
     end
     eq(p.hp, 0); assert(p.ko > 0)
@@ -195,7 +195,7 @@ end)
 check("model: warning is dodgable and host pause freezes hazard, HP, respawn and game clock", function()
     local s = active(); local p = s.players[1]; M.tick(s, M.PATROL_TIME)
     p.invuln, p.x = 0, s.hazard.lanes[1]
-    M.tick(s, 3); M.tick(s, 3); assert(M.act(s, 1, "R"))
+    M.tick(s, 1); M.tick(s, 1); assert(M.act(s, 1, "R"))
     M.tick(s, 1); eq(p.hp, 100)
     local time, remaining = s.time, s.hazard.remaining
     s.paused = true; M.tick(s, 5); eq(s.time, time); eq(s.hazard.remaining, remaining)
@@ -205,18 +205,18 @@ local function close(a, b) assert(math.abs(a-b) < 0.000001, tostring(a).." != ".
 local function atStage(stage, mode)
     local s = active(mode); s.stage, s.phase, s.wait = stage-1, "clear", 0.1; M.tick(s, 0.1); return s
 end
-check("model: shared boss timing aliases preserve seven-second warnings and half-second impacts", function()
-    eq(M.PATROL_TIME, 3); eq(M.WARNING_TIME, 7); eq(M.IMPACT_TIME, 0.5); eq(M.HAZARD_COOLDOWN, 3)
+check("model: shared boss timing aliases enforce three-second warnings and half-second impacts", function()
+    eq(M.PATROL_TIME, 3); eq(M.WARNING_TIME, 3); eq(M.IMPACT_TIME, 0.5); eq(M.HAZARD_COOLDOWN, 3)
     eq(M.BOSS_PATROL, M.PATROL_TIME); eq(M.BOSS_WINDUP, M.WARNING_TIME)
     eq(M.BOSS_ATTACK, M.IMPACT_TIME); eq(M.BOSS_RECOVER, M.HAZARD_COOLDOWN)
     eq(M.MAX_HP, 100); eq(M.MAX_BOTS, 5); eq(M.ACTION_INTERVAL, 0.2); eq(M.BOT_INTERVAL, 0.35)
 end)
-check("model: actual complete boss cycles take 13.5 seconds instead of 17.5 with unchanged warning and impact", function()
-    local oldCycle = 5 + 7 + 0.5 + 5
+check("model: actual complete boss cycles take 9.5 seconds instead of 13.5 with real three-second windup", function()
+    local oldCycle = 3 + 7 + 0.5 + 3
     for stage = 1, 4 do
         for _, dt in ipairs({0.05, 0.1}) do
             local s = atStage(stage)
-            local durations = {patrol=3, windup=7, attack=0.5, recover=3}
+            local durations = {patrol=3, windup=3, attack=0.5, recover=3}
             for cycle = 1, 3 do
                 local started = s.time
                 eq(s.bossMotion.id, cycle)
@@ -228,15 +228,15 @@ check("model: actual complete boss cycles take 13.5 seconds instead of 17.5 with
                     close(s.time - phaseStarted, durations[phase])
                 end
                 local measured = s.time - started
-                close(measured, 13.5); close(oldCycle - measured, 4)
-                assert((oldCycle - measured) / oldCycle > 0.2285 and (oldCycle - measured) / oldCycle < 0.2286)
+                close(measured, 9.5); close(oldCycle - measured, 4)
+                assert((oldCycle - measured) / oldCycle > 0.2962 and (oldCycle - measured) / oldCycle < 0.2963)
                 eq(s.bossMotion.phase, "patrol"); eq(s.bossMotion.id, cycle + 1)
             end
         end
     end
-    print("  Actual cycle 13.5s vs prior 17.5s: 4.0s / 22.857% shorter; four bosses, three cycles, 0.05/0.1s ticks")
+    print("  Actual cycle 9.5s vs prior 13.5s: 4.0s / 29.630% shorter; four bosses, three cycles, 0.05/0.1s ticks")
 end)
-check("model: every legal lane and tower height has a real-input escape within the unchanged seven-second warning", function()
+check("model: every legal lane and tower height has a real-input escape within the real three-second warning", function()
     local threatenedCases, maxEscape = 0, 0
     local function threatened(s, x)
         for _, lane in ipairs(s.hazard.lanes) do if lane == x then return true end end
@@ -248,9 +248,9 @@ check("model: every legal lane and tower height has a real-input escape within t
                 local s = atStage(stage); local p = s.players[1]
                 p.x, p.y, p.invuln = x, y, 0
                 M.tick(s, M.PATROL_TIME)
-                eq(s.bossMotion.phase, "windup"); close(s.hazard.remaining, 7)
+                eq(s.bossMotion.phase, "windup"); close(s.hazard.remaining, 3)
                 local warningStarted, origin, lanes = s.time, M.bossPosition(s), table.concat(s.hazard.lanes, ",")
-                M.tick(s, 4); eq(p.hp, 100) -- React only in the final three seconds, like AI.
+                M.tick(s, 1.5); eq(p.hp, 100) -- Nonzero human reaction; actual legal actions must fit the remaining1.5s.
                 local function unsafe() return threatened(s, p.x) and (stage ~= 3 or p.y == 0) end
                 if unsafe() then
                     threatenedCases = threatenedCases + 1
@@ -270,17 +270,17 @@ check("model: every legal lane and tower height has a real-input escape within t
                     assert(not unsafe(), "Dodge did not escape warning")
                     maxEscape = math.max(maxEscape, actions * M.ACTION_INTERVAL)
                 end
-                local left = 7 - (s.time - warningStarted)
+                local left = 3 - (s.time - warningStarted)
                 assert(left > 0.01); M.tick(s, left - 0.01)
                 eq(s.bossMotion.phase, "windup"); eq(p.hp, 100)
                 close(M.bossPosition(s), origin); eq(table.concat(s.hazard.lanes, ","), lanes)
                 M.tick(s, 0.01); eq(s.bossMotion.phase, "attack"); eq(p.hp, 100)
-                close(s.time - warningStarted, 7)
+                close(s.time - warningStarted, 3)
             end
         end
     end
     assert(threatenedCases > 0); assert(maxEscape <= 1.2)
-    print(string.format("  Real-input dodge: all 64 legal boss/lane/height cases, %d threatened; max escape %.1fs after 4s reaction delay", threatenedCases, maxEscape))
+    print(string.format("  Real-input dodge: all 64 legal boss/lane/height cases, %d threatened; max escape %.1fs after 1.5s reaction delay", threatenedCases, maxEscape))
 end)
 check("model: actual fractional patrols stay in lanes 2..6, reflect and never exceed two lanes per three seconds", function()
     for stage = 1, 4 do
@@ -296,7 +296,7 @@ check("model: actual fractional patrols stay in lanes 2..6, reflect and never ex
             close(math.abs(M.bossPosition(s)-before), distance / 2)
             assert(math.abs(M.bossPosition(s)-before) <= 1 + 0.000001)
             M.tick(s, M.PATROL_TIME / 2); eq(s.bossMotion.phase, "windup"); close(M.bossPosition(s), b.toLane)
-            M.tick(s, 5); M.tick(s, 2); M.tick(s, M.IMPACT_TIME); M.tick(s, M.HAZARD_COOLDOWN)
+            M.tick(s, 2); M.tick(s, 1); M.tick(s, M.IMPACT_TIME); M.tick(s, M.HAZARD_COOLDOWN)
         end
     end
 end)
@@ -318,8 +318,8 @@ check("model: warnings lock origin and lanes, impacts occur once, and stationary
         M.tick(s, M.PATROL_TIME); local b = s.bossMotion
         local origin, lanes = M.bossPosition(s), table.concat(b.lanes, ",")
         eq(b.fromLane, b.toLane); assert(#b.lanes <= 4)
-        p.x = 7; M.tick(s, 3); eq(table.concat(b.lanes, ","), lanes); close(M.bossPosition(s, 999), origin)
-        p.x, p.invuln = b.lanes[1], 0; M.tick(s, 3.9); eq(p.hp, 100)
+        p.x = 7; M.tick(s, 1); eq(table.concat(b.lanes, ","), lanes); close(M.bossPosition(s, 999), origin)
+        p.x, p.invuln = b.lanes[1], 0; M.tick(s, 1.9); eq(p.hp, 100)
         M.tick(s, 0.1); eq(b.phase, "attack"); eq(p.hp, 65)
         p.x, p.invuln = b.lanes[1], 0; M.tick(s, 0.4); eq(p.hp, 65); eq(table.concat(b.lanes, ","), lanes)
         M.tick(s, 0.1); eq(b.phase, "recover"); close(b.remaining, M.HAZARD_COOLDOWN); eq(#b.lanes, 0)
@@ -341,14 +341,14 @@ check("model: ranged columns hit every height; Snack Tax stomp is ground-only; k
         local b = s.bossMotion
         assert(b.lanes[1] == 2 or b.lanes[2] == 2)
         p.invuln, q.invuln = 0, 0
-        M.tick(s, 5); M.tick(s, 2)
+        M.tick(s, 2); M.tick(s, 1)
         eq(p.hp, 65); eq(p.x, 1)
         eq(q.hp, stage == 3 and 100 or 65); eq(q.y, stage == 3 and 2 or 1)
         eq(M.bossAttackKind(s), stage == 3 and "ground" or "ranged")
     end
     local s = atStage(2); local p = s.players[1]
     p.x = 5; M.tick(s, M.PATROL_TIME); eq(M.bossPosition(s), 6)
-    p.invuln = 0; M.tick(s, 5); M.tick(s, 2); eq(p.x, 4) -- NOT away from old lane 4
+    p.invuln = 0; M.tick(s, 2); M.tick(s, 1); eq(p.x, 4) -- NOT away from old lane 4
     s = active(); p = s.players[1]; p.x, p.invuln = 4, 0
     M.tick(s, 2); eq(p.hp, 100) -- no new body-collision damage
 end)
@@ -374,7 +374,7 @@ check("model: every boss phase freezes on pause and known-segment smoothing neve
         eq(p.ko, 2); eq(p.hp, 0); eq(s.hazard.remaining, remaining)
         s.paused = false; p.ko, p.hp, p.invuln = 0, 100, 30
         if phase == "patrol" then close(M.bossPosition(s, 99), b.toLane); eq(b.phase, "patrol") end
-        if phase == "windup" then M.tick(s, 5); M.tick(s, 2) else M.tick(s, remaining) end
+        if phase == "windup" then M.tick(s, 2); M.tick(s, 1) else M.tick(s, remaining) end
     end
 end)
 check("model: motion tick partition is deterministic, stage/replay reset all motion and AI chases the actual boss", function()
@@ -529,11 +529,11 @@ end)
 
 check("model: Dodger reacts earlier, works safe objectives and never re-enters a warned ground lane", function()
     local s = mixedWorld("coop")
-    s.hazard = {phase="warning", remaining=5, lanes={2}}
+    s.hazard = {phase="warning", remaining=2.5, lanes={2}}
     local cautious, smasher = s.players[4], s.players[1]
     cautious.x, cautious.y, smasher.x, smasher.y = 2, 2, 2, 2
     eq(M.botAction(s, 4), "D"); eq(M.botAction(s, 1), "U")
-    s.hazard.remaining = 3; eq(M.botAction(s, 1), "D")
+    s.hazard.remaining = 2; eq(M.botAction(s, 1), "D")
     cautious.x, cautious.y = 4, 0
     eq(M.botAction(s, 4), "P") -- Safe street-level city damage, not a cosmetic retreat.
     local before = s.hp[4]; assert(M.act(s, 4, M.botAction(s, 4))); eq(s.hp[4], before-1)

@@ -17,8 +17,9 @@ local function editing()
     return chat and chat.HasFocus and chat:HasFocus() or false
 end
 function Input.create(app, root)
+    local preferred = app.db and app.db.controlMode == "mouse" and "mouse" or "keyboard"
     local self = { app = app, root = root, held = {}, blocked = {}, serial = 0, focused = false, nextAction = 0,
-        reason = "Mouse controls • select Keyboard to use keys" }
+        preference = preferred, reason = preferred == "keyboard" and "Keyboard preferred • inactive until you join a fight" or "Mouse preferred • click actions after joining" }
     local frame = CreateFrame("Frame", nil, root)
     self.frame = frame
     frame:SetSize(1, 1); frame:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
@@ -51,7 +52,7 @@ function Input.create(app, root)
     function self:release(reason)
         self.focused, self.held, self.blocked, self.nextAction = false, {}, {}, 0
         self.phase,self.stage=nil,nil
-        self.reason = reason or "Mouse controls • keys released"
+        self.reason = reason or (self.preference == "keyboard" and "Keyboard preferred • keys inactive" or "Mouse preferred • keys inactive")
         frame:Hide()
         if self.supported and not (InCombatLockdown and InCombatLockdown()) then
             frame:SetPropagateKeyboardInput(true)
@@ -59,11 +60,28 @@ function Input.create(app, root)
     end
     function self:shown()
         -- Reopening clears the stale hidden-window reason, never auto-captures.
-        self:release(app.net.role=="spectate" and "Watching only — no captured keys" or "Mouse controls • select Keyboard to use keys")
+        self:release(app.net.role=="spectate" and (self.preference == "keyboard" and "Keyboard preferred • watching • no captured keys" or "Mouse preferred • watching")
+            or (self.preference == "keyboard" and "Keyboard preferred • inactive until eligible" or "Mouse preferred • click actions after joining"))
+    end
+    function self:setPreference(mode)
+        if mode ~= "mouse" and mode ~= "keyboard" then return false end
+        self.preference = mode
+        if app.db then app.db.controlMode = mode end
+        if mode == "mouse" then
+            self:release("Mouse preferred • keyboard released")
+            return true
+        end
+        if self:canPlay() and not editing() and not (IsWindowFocused and not IsWindowFocused()) then
+            return self:grab()
+        end
+        self:release(app.net.role=="spectate" and "Keyboard preferred • watching • no captured keys"
+            or "Keyboard preferred • inactive until eligible")
+        return true
     end
     function self:grab()
         if not self.supported then self.reason = "Keyboard unavailable — use mouse controls"; return false end
         if not self:canPlay() or editing() or (IsWindowFocused and not IsWindowFocused()) then return false end
+        self.preference = "keyboard"; if app.db then app.db.controlMode = "keyboard" end
         self.focused, self.held, self.blocked, self.nextAction = true, {}, {}, 0
         self.phase,self.stage=app.net.state.phase,app.net.state.stage
         self.reason = "KEYS LIVE • WASD / arrows + SPACE • Esc releases"

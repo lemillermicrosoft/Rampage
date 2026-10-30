@@ -1,4 +1,5 @@
--- R5: fenced authority terms and complete recovery checkpoints. Tokens are correlation, not secrets.
+-- R6: three-second warning semantics; R5 peers must upgrade even though field widths match.
+-- Fenced authority terms and complete recovery checkpoints. Tokens are correlation, not secrets.
 -- Public integration: net.term is the authority fence; net.migration is a table
 -- while unsafe (migrationActive mirrors it), net.leaving is true during asynchronous leave (up to 35s), and
 -- state.paused always blocks simulation/input then. participants[id].joined is
@@ -16,7 +17,7 @@
 -- uncommitted progress can roll back. No perfect-consensus or Byzantine claim.
 local _, addon = ...
 local M = addon.Model
-local N = { PREFIX = "ToastRampage1", VERSION = "R5", MAX_BYTES = 255,
+local N = { PREFIX = "ToastRampage1", VERSION = "R6", MAX_BYTES = 255,
     MAX_MEMBERS = 40, SEND_RATE = 8, SEND_BURST = 10, BYTE_RATE = 700,
     BYTE_BURST = 1000, WIRE_OVERHEAD = 16, MAX_QUEUE = 128,
     SNAPSHOT_INTERVAL = 1.25, CHUNK_BYTES = 176, MAX_CHUNKS = 3,
@@ -188,8 +189,8 @@ end
 function methods:enqueue(key, text, priority, fence)
     -- All session traffic, including admission and end/leave, is term-fenced.
     -- encodeState is also public and already appends its explicit term.
-    if type(text) == "string" and string.sub(text, 1, 3) == "R5|"
-        and string.sub(text, 4, 5) ~= "S|" and text ~= "R5|Q" then
+    if type(text) == "string" and string.sub(text, 1, 3) == "R6|"
+        and string.sub(text, 4, 5) ~= "S|" and text ~= "R6|Q" then
         text = text .. "|" .. tostring(fence or self.term or 1)
     end
     if type(text) ~= "string" or #text > N.MAX_BYTES then return false end
@@ -390,6 +391,7 @@ function methods:snapshot()
     for i, text in ipairs(N.encodeState(self.state, self.sid, self.snapshotSeq, self.inputEpoch, self.revision, self.participants, self.term)) do
         self:enqueue("state" .. i, text, 1)
     end
+    return true
 end
 function methods:changedMember(id)
     if self.revision >= 999999 then self:leave(); return false end
@@ -1082,8 +1084,8 @@ function methods:receive(sender, text)
         or type(text) ~= "string" or #text > N.MAX_BYTES or #text < 4 then return false end
     -- Every raid broadcast reaches every client. Discard peer gameplay before
     -- allocating a bucket or splitting fields; only discovery is peer-visible.
-    local authority = string.match(text,"^R5|([XVZTGFUYDWO])|")
-    if self.mode ~= "host" and sender ~= self.hostName and text ~= "R5|Q" and string.sub(text, 1, 5) ~= "R5|A|" and not authority then return false end
+    local authority = string.match(text,"^R6|([XVZTGFUYDWO])|")
+    if self.mode ~= "host" and sender ~= self.hostName and text ~= "R6|Q" and string.sub(text, 1, 5) ~= "R6|A|" and not authority then return false end
     local now = self.env.now(); local bucket = self.receiveBuckets[sender] or { tokens = 24, time = now }
     self.receiveBuckets[sender] = bucket
     bucket.tokens = math.min(24, bucket.tokens + math.max(0, now - bucket.time) * 16); bucket.time = now
@@ -1294,8 +1296,18 @@ function methods:tick(elapsed)
                 end
             end
         end
-        local oldPhase = self.state.phase; M.tick(self.state, math.min(math.max(elapsed, 0), 0.5))
+        local oldPhase = self.state.phase
+        local oldMotion = self.state.bossMotion and self.state.bossMotion.phase
+        M.tick(self.state, math.min(math.max(elapsed, 0), 0.5))
         if self.mode == "host" then
+            -- Capture the newly locked warning promptly, using the SAME bounded
+            -- full-world queue/buckets. Never replace a partly sent world and
+            -- never add predicted impacts or a parallel event authority. If an
+            -- older world is pending, retry after it drains instead of wasting
+            -- another1.25s interval. One onset per real warning, no per-frame flood.
+            if self.state.phase == "play" and self.state.bossMotion.phase == "windup" and oldMotion ~= "windup" then
+                self.nextSnapshot = now
+            end
             if oldPhase ~= "play" and self.state.phase == "play" then if not self:bumpEpoch() then return end end
             for id = 1, 40 do
                 local member = self.participants[id]
@@ -1314,7 +1326,7 @@ function methods:tick(elapsed)
                     if self.memberVersions[id] then self:sendMember(id); break end
                 end
             end
-            if not self.leasePaused and now >= self.nextSnapshot then self.nextSnapshot = now + N.SNAPSHOT_INTERVAL; self:snapshot() end
+            if not self.leasePaused and now >= self.nextSnapshot and self:snapshot() then self.nextSnapshot = now + N.SNAPSHOT_INTERVAL end
             if not self.leasePaused then self:sendRecovery(now) end
         end
     elseif self.mode == "joining" then

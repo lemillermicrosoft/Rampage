@@ -8,8 +8,11 @@ const luaparse = require('luaparse');
 const root = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
 const value = (key, fallback) => args.includes(key) ? args[args.indexOf(key) + 1] : fallback;
+// Runtime override is a frozen copy, never an installed checkout or Git switch.
+// Use the same current fixture/mocks against both runtimes for matched evidence.
+const runtimeRoot = path.resolve(value('--runtime-root', root));
 const scene = value('--scene', 'solo');
-if (!['solo', 'raid', 'boss', 'spectator', 'victory', 'brawl', 'hazard', 'ko', 'boss-patrol', 'boss-windup', 'boss-impact', 'hit-before', 'hit-impact', 'hit-settle', 'hit-reduced', 'hit-team', 'hit-shield', 'flow-watch', 'flow-fight', 'flow-info', 'flow-settings', 'flow-idle', 'flow-solo', 'flow-ai', 'flow-ai-settings'].includes(scene)) throw new Error('Unknown scene');
+if (!['solo', 'raid', 'boss', 'spectator', 'victory', 'brawl', 'hazard', 'ko', 'boss-patrol', 'boss-windup', 'boss-impact', 'hit-before', 'hit-impact', 'hit-settle', 'hit-reduced', 'hit-team', 'hit-shield', 'flow-watch', 'flow-fight', 'flow-info', 'flow-settings', 'flow-idle', 'flow-solo', 'flow-ai', 'flow-ai-settings', 'flow-lowhp', 'flow-longnames', 'flow-keyboard', 'flow-matched'].includes(scene)) throw new Error('Unknown scene');
 const L = lauxlib.luaL_newstate();
 lualib.luaL_openlibs(L);
 function execute(source, name) {
@@ -18,7 +21,7 @@ function execute(source, name) {
   if (status === lua.LUA_OK) status = lua.lua_pcall(L, 0, lua.LUA_MULTRET, 0);
   if (status !== lua.LUA_OK) throw new Error(to_jsstring(lua.lua_tostring(L, -1)));
 }
-const tocVersion = fs.readFileSync(path.join(root, 'Rampage.toc'), 'utf8').match(/^## Version:\s*(\S+)/m)?.[1];
+const tocVersion = fs.readFileSync(path.join(runtimeRoot, 'Rampage.toc'), 'utf8').match(/^## Version:\s*(\S+)/m)?.[1];
 if (!tocVersion || !/^\d+\.\d+\.\d+$/.test(tocVersion)) throw new Error('Invalid TOC version');
 execute(`unpack=table.unpack; TEST_COUNT=0; EXPECTED_VERSION='${tocVersion}'
 function check(name,fn) local ok,err=pcall(fn); if not ok then error('FAIL: '..name..'\\n'..tostring(err),0) end TEST_COUNT=TEST_COUNT+1; print('PASS: '..name) end
@@ -26,9 +29,9 @@ function eq(a,b) assert(a==b,'expected '..tostring(b)..', got '..tostring(a)) en
 const mockSource = fs.readFileSync(path.join(root, 'tests/wow-smoke.lua'), 'utf8');
 luaparse.parse(mockSource, { luaVersion: '5.1' });
 execute(mockSource, '@wow-mock');
-const runtime = fs.readFileSync(path.join(root, 'Rampage.toc'), 'utf8').split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith('#'));
+const runtime = fs.readFileSync(path.join(runtimeRoot, 'Rampage.toc'), 'utf8').split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith('#'));
 for (const file of runtime) {
-  const source = fs.readFileSync(path.join(root, file), 'utf8');
+  const source = fs.readFileSync(path.join(runtimeRoot, file), 'utf8');
   luaparse.parse(source, { luaVersion: '5.1' });
   execute(`assert(load([====[${source}]====], '@${file}'))('Rampage',Addon)`, '@load-' + file);
 }
@@ -40,6 +43,8 @@ if (args.includes('--smoke')) {
 execute(`prepareWoWPreview('${scene}'); return captureWoWPreview()`, '@capture-actual-ui');
 const capture = JSON.parse(to_jsstring(lua.lua_tostring(L, -1)));
 lua.lua_close(L);
+const captureOutput = value('--capture-output', null);
+if (captureOutput) { fs.mkdirSync(path.dirname(path.resolve(captureOutput)), { recursive: true }); fs.writeFileSync(captureOutput, JSON.stringify(capture, null, 2)); }
 const esc = s => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const num = n => Number(n.toFixed(2));
 const fill = shape => `rgb(${[shape.r, shape.g, shape.b].map(n => Math.round(n * 255)).join(',')})`;

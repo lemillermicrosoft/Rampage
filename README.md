@@ -2,21 +2,21 @@
 
 **<Toast>'s pocket raid-break arcade.** Original monsters smash a shared city, then flatten four fictional bosses. For **TBC Classic 2.5.6 / Interface20506**. Original art inspired by classic climb-and-smash play; no affiliation with the original Rampage game's owners.
 
-## Brawl-first R5 release
+## R6: three-second warnings and preferred controls
 
-The owner-approved PR #11 release combines confirmed hit feedback ([#10](https://github.com/lemillermicrosoft/Rampage/issues/10)) with a polished city-first UI, INFO/SETTINGS panels, Mouse/Keyboard selection, automatic watching, host succession, faster boss cycles and varied AI profiles ([#12](https://github.com/lemillermicrosoft/Rampage/issues/12)). Unique levels remain deferred.
+Issue [#13](https://github.com/lemillermicrosoft/Rampage/issues/13) follows published v0.5.0 with **real three-second boss warnings**, original segmented Mouse/Keyboard controls and focused layout/alignment improvements. It retains confirmed hit feedback, Brawl-first automatic watching/explicit fighter consent, INFO/SETTINGS, oldest-admitted host succession and four varied AI profiles.
 
-**Upgrade every participant to this R5 release.** R5 is incompatible with v0.4.0/R4 and the earlier `eef148f` feedback candidate. The approved `b98c93c` playtest already uses the same R5 gameplay but has an old displayed version; prefer the versioned release ZIP for coordinated installs.
+**All testers need the same R6 release.** Published v0.5.0 and the earlier installed `b98c93c` candidate use R5 and cannot join it. Field widths are unchanged but timing/simulation semantics differ, so old peers are explicitly rejected. Matching an old display label does not establish compatibility.
 
-The owner explicitly authorized publishing this build on October30,2026 after positive in-game feedback. Publication advances the primary release checkout, but the owner's addon junction stays on the separately verified frozen `b98c93c` candidate; publication alone does not relabel those installed files. No forced reload or SavedVariables edits. Do not extract through a linked development checkout. Preserved v0.4.0 ZIP/frozen runtime provides rollback: an old junction pointing to primary main now follows the new release, not v0.4.0. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for release behavior and caveats.
+The owner explicitly authorized publishing and installing this completed issue13 scope on October30,2026. Publication uses the reviewed versioned ZIP; the local addon is frozen from that exact release after archive verification, never linked to an editable worktree/main. No forced reload or SavedVariables edits. Previous releases/candidates and genuine frozen v0.4.0 rollback remain preserved.
 
-**Not included:** the subsequent request for a maximum three-second boss warning, radio/control styling or alignment polish. This release retains the tested seven-second warning. Blizzard asset/comparison-toggle work remains deferred.
+Blizzard/native assets or a skin comparison toggle, unique levels and AFK dialog investigation are **not included**.
 
 ## Start playing
 
-1. After installing the same release on every participant, type **`/rampage`**. In a PARTY/RAID, opening automatically watches an available Rampage room. Watching creates **no avatar, damage target or captured keyboard**.
+1. After coordinating installation of the same R6 candidate on every participant, type **`/rampage`**. In a PARTY/RAID, opening automatically watches an available Rampage room. Watching creates **no avatar, damage target or captured keyboard**.
 2. Click **Join fight** to explicitly enter **BRAWL / PvP**. **Leave fight** returns to watching without leaving the room. A full fight keeps you watching; a seat becoming free never auto-joins you.
-3. Choose **Mouse** for the compact action buttons or **Keyboard** for WASD/arrows +Space. Keyboard selection is explicit and shows actual capture state. Escape releases keys back to Mouse; there is no automatic recapture.
+3. **Keyboard is the fresh default.** Choose Keyboard or Mouse while idle, in a lobby or watching—this saves only a preference and never joins, creates an avatar or captures keys. After explicit **Join fight** is accepted and active play begins, Keyboard may activate through the normal safe lifecycle; Mouse remains uncaptured with action buttons. Escape releases capture but keeps Keyboard preferred/inactive; it does not silently switch the saved preference or auto-recapture.
 4. If no room exists, choose **Host Brawl**, then Start. **Solo practice** or `/rampage solo` starts local Brawl without requiring a group. Solo and hosting do not automatically capture keys.
 5. **SETTINGS → + Add AI** adds a mixed-profile bot. **INFO** contains instructions, shortcuts and feedback explanations. Settings holds audio/mute, Reduced Motion, owner AI controls and **Leave game**.
 
@@ -33,9 +33,9 @@ Only Brawl is exposed in the UI/public new-game commands. Co-op Model/Protocol c
 
 ## Controls and accessibility
 
-Mouse/Keyboard selectors are mutually exclusive and reflect real capture, not a remembered wish. Ordinary city intermissions preserve the selected mode while held actions are cleared; the next city requires key-up/fresh key-down. Escape, chat/edit focus, unknown shortcuts, modifiers, window-focus loss, long interruptions, close/Leave, KO and real combat release capture. **No permanent or override bindings, protected spell actions, or automatic recapture.**
+Mouse/Keyboard segments are mutually exclusive and show the persisted preference with a separate indicator/fill, not ASCII radio text. Fresh/nil/invalid legacy settings migrate to Keyboard; an explicit saved Mouse choice stays Mouse. Separate status text says whether Keyboard is **active** or merely **preferred/inactive**. Preference is selectable while idle, in lobby, watching—including host-as-spectator—or after a full/denied join, without admission/action traffic.
 
-INFO and SETTINGS release keyboard capture before opening, block gameplay input while open, and close with the main window or combat. Closing them leaves Mouse selected. Actual-client focus/taint still needs manual verification; mocks cannot prove native event ordering.
+Ordinary city intermissions preserve active routing while held actions are cleared; the next city requires key-up/fresh key-down. Escape, chat/edit focus, unknown shortcuts, modifiers, window-focus loss, long interruptions, close/Leave fight, KO and real combat release capture while retaining preference. INFO and SETTINGS release before opening and never auto-recapture on close. **No permanent/override bindings, protected spell actions or safety-release auto-grab.** Actual-client focus/taint still needs manual verification; mocks cannot prove native event ordering.
 
 **Reduced Motion** in Settings persists through normal addon settings. It immediately removes decorative recoil/bob/bounce, number rise and moving particles, while retaining health text/trails, target highlights and essential boss telegraph poses. Gameplay movement is unchanged. No world-camera/UIParent/window shake.
 
@@ -58,14 +58,14 @@ Queues and decoration are bounded:32 queued receipts,8 nonlocal receipts per und
 - Floor hits award10 fame, final tower collapse40, boss hits15 and final boss hit100. KOs are separate, not bonus fame. Team fame sums current actors; leaving/spectating removes that actor's current score. Local personal best persists.
 
 ### Faster, readable attacks
-Each boss cycle is **3s patrol →7s locked warning →0.5s attack →3s stationary recovery**:13.5s rather than17.5s, **22.9% shorter**, without stronger damage or less warning. Patrol stays within lanes2–6 and travels at most two lanes per segment. Warning origin/targets lock before impact; at least four lanes remain safe.
+Each boss cycle is **3s patrol →3s locked warning →0.5s attack →3s stationary recovery**:9.5s rather than13.5s, **29.6% shorter**. This really reduces the warning-to-impact interval; no hidden earlier telegraph or cosmetic countdown relabel. Damage is unchanged. Patrol stays within lanes2–6 and travels at most two lanes per segment. Warning origin/targets lock before impact; at least four lanes remain safe.
 
 - Crumb Baron throws at one column, all heights.
 - Permitron9000 beams two adjacent columns, all heights.
 - Snack Tax pursues then stomps nearby columns **ground-only**; climb to escape.
 - Queuezilla barrages three adjacent columns simultaneously, all heights.
 
-Boss movement, hit checks and AI use the same position rule. Remote animation follows only a received patrol segment and stops at its endpoint/staleness; no next attack is predicted. A short attack pose may fall between1.25s snapshots. Timely consecutive samples can show static confirmed aftermath at previously warned targets, never a delayed damaging projectile. Seven-second warnings are not a guarantee under arbitrary packet loss; dodge early.
+Boss movement, hit checks and AI use the same position rule. Remote animation follows only a received patrol segment and stops at its endpoint/staleness; no next attack is predicted. A short attack pose may fall between ordinary1.25s snapshots. Newly locked warnings request an immediate bounded full-world snapshot, without replacing partially sent worlds or bypassing the transport budget. Timely consecutive samples can show static confirmed aftermath at previously warned targets, never a delayed damaging projectile. **Three-second warnings cannot survive arbitrary packet loss:** a blackout longer than the warning can hide the whole attack. Dodge promptly; slow reactions, long descents, lower frame rates and network congestion reduce the margin.
 
 ### Health and Brawl
 100 HP,20-damage Brawl punch,35-damage boss impact. Model actions have a0.2s minimum gap; PvP damage has a separate0.6s cooldown. A punch selects the lowest eligible other actor at the same height within one lane, then retains existing city/boss rules. Damage gives brief0.8s immunity and bounded knockback. No profile changes these values.
@@ -80,15 +80,15 @@ Settings adds up to **five AI within25 total actors**, one click each; no extern
 - **Scrapper:** briefly seeks Brawl rivals, then returns to objectives; retained Co-op falls back safely.
 - **Dodger:** avoids hazards earlier and positions more cautiously, without immunity or abandoning objectives.
 
-The fifth bot reuses a profile with deterministic bias. Profiles differ in actual priorities/cadence, not just names or colors. Hover a crew slot/monster for its profile tag. No manual advanced selection is required. Immutable bot identity and authoritative state keep behavior consistent across recovery; no unseeded client randomness or extra wire profile names. Remove AI removes the oldest bot, never a person.
+Dodger begins warning avoidance at2.5s remaining; others at2s, still subject to their normal0.3–0.6s decision cadence and ordinary action gates. None gains immunity or stronger damage. The fifth bot reuses a profile with deterministic bias. Profiles differ in actual priorities/cadence, not just names or colors. Hover a crew slot/monster for its profile tag. No manual advanced selection is required. Immutable bot identity and authoritative state keep behavior consistent across recovery; no unseeded client randomness or extra wire profile names. Remove AI removes the oldest bot, never a person.
 
 AI consumes no real membership seat. Rooms support40 real participants and25 actors:20 human fighters+5 AI can coexist with20 watchers. A human joining at the actor cap evicts the oldest AI before denying admission; existing human fighters are not displaced. Watchers are not automatically promoted.
 
 ## Network and evidence
 
-**R5 only; normal PARTY/RAID** reaches members of the same group, including different raid subgroups. No independent-party bridge, instance-chat/battleground routing, external server or competitive anti-cheat claim. Authenticated sender/room/term, admission generation, role and input epoch/sequence validate messages. Bots are never physical roster members.
+**R6 only; normal PARTY/RAID** reaches members of the same group, including different raid subgroups. No independent-party bridge, instance-chat/battleground routing, external server or competitive anti-cheat claim. Authenticated sender/room/term, admission generation, role and input epoch/sequence validate messages. Bots are never physical roster members.
 
-Ordinary worlds remain1.25s apart; faster rendering/input sampling is not faster network response. All traffic, including new recovery checkpoints, shares **700 chargedB/s and8messages/s** limits, with1,000-byte/10-message bursts and255-byte packet maximum. Checkpoints carry complete bounded membership and exact simulation timers for recovery. Safety takes priority over availability when membership/authority evidence is inconsistent. Friendly, nonprecision play; native transport and partition behavior cannot be certified by headless tests.
+Ordinary snapshot interval remains1.25s, with one early request on each real warning onset. A pending older world finishes first; capture retries after it drains rather than waiting another interval. No separate hazard-event channel, predicted impact, client damage authority or higher bandwidth cap is introduced. In80 healthy two-client tests spanning all four bosses/ground/top floor/five snapshot phases,200ms round-trip latency,20fps ticks,0.5/0.75s reaction and250ms legal key cadence, every threatened actor escaped: worst notice delay0.8s, minimum escape margin0.3s. This is a measured envelope, not a guarantee for slower input, larger/lossy groups or native transport. All traffic, including new recovery checkpoints, shares **700 chargedB/s and8messages/s** limits, with1,000-byte/10-message bursts and255-byte packet maximum. Checkpoints carry complete bounded membership and exact simulation timers for recovery. Safety takes priority over availability when membership/authority evidence is inconsistent. Friendly, nonprecision play; native transport and partition behavior cannot be certified by headless tests.
 
 Development uses existing locked Fengari/luaparse tools:
 
