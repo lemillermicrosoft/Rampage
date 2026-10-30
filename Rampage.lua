@@ -1,5 +1,5 @@
 -- WoW adapter only: group identity, addon channel, persistence and combat safety.
--- TOC order: Model.lua, Protocol.lua, Input.lua, Sound.lua, UI.lua, Rampage.lua.
+-- TOC order: Model.lua, Protocol.lua, Feedback.lua, Input.lua, Sound.lua, UI.lua, Rampage.lua.
 local addonName, addon = ...
 local app = { now = function() return GetTime() end }
 app.VERSION = "0.4.0" -- Kept in sync with the TOC by the release packager.
@@ -83,64 +83,141 @@ local function initialize()
                 else app.input:syncPhase() end
             end
             if app.sound then app.sound:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
+            if app.feedback then app.feedback:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
         end })
+    app.feedback = addon.Feedback.create(app)
     app.sound = addon.Sound.create(app)
     app.refreshRoster()
     app.net:setCombat(InCombatLockdown())
     if not app.networkEnabled then app.net:notice("Addon messaging unavailable; solo practice still works.") end
 end
 
+-- User-intent gate: discovery/auto-watch only while explicitly opened and visible.
+-- Closing hides but retains admitted membership/host tenure. Leave suppresses rejoin
+-- until a fresh user open/Watch action; combat window restoration is not user intent.
+local function visible() return addon.UI.root and addon.UI.root:IsShown() end
+local function draw() if addon.UI.root then addon.UI.render() end end
+local function knownRoom()
+    local list = app.net:lobbyList()
+    for _, room in ipairs(list) do
+        if room.name == app.watchHost and room.sid == app.watchSid then return room end
+    end
+    -- Existing discovery records have no shared creation clock; use deterministic
+    -- name/session order only when no sticky selected/admitted room exists.
+    table.sort(list, function(a,b) if a.name==b.name then return a.sid<b.sid end return a.name<b.name end)
+    return list[1]
+end
 local function showWindow()
-    if not app.net or app.net.combat then return end
-    addon.UI.create(app):Show(); addon.UI.render()
+    if not app.net or app.net.combat then return false end
+    addon.UI.create(app):Show(); draw(); return true
+end
+function app.updateWatch()
+    local net, now = app.net, app.now()
+    if not net or not app.watchEnabled or not visible() or net.combat or not net.grouped or net.mode~="idle" then return end
+    if now < (app.nextWatchAttempt or 0) then return end
+    local room = knownRoom()
+    if room and now >= (app.watchCollectUntil or 0) then
+        app.watchHost,app.watchSid=room.name,room.sid
+        local humans=(room.count or 0)-(room.bots or 0)+(room.spectators or 0)
+        if humans>=40 then
+            app.nextWatchAttempt=now+5
+            if app.watchFullRoom~=room.sid then app.watchFullRoom=room.sid; net:notice("Room full • watching needs a free participant seat") end
+            return
+        end
+        app.watchFullRoom=nil; app.nextWatchAttempt=now+5
+        net:join(room.name,room.sid,"spectate",room.mode)
+        return
+    end
+    app.nextWatchAttempt=now+1
+    if now >= (app.nextWatchDiscover or 0) then
+        app.nextWatchDiscover=now+4
+        net:discover()
+    end
+end
+function app.watch()
+    if not app.net or app.net.combat then return false end
+    app.watchEnabled=true; app.watchFullRoom=nil
+    app.nextWatchAttempt,app.nextWatchDiscover=0,0
+    app.watchCollectUntil=app.now()+0.75
+    if not showWindow() then return false end
+    app.updateWatch(); return true
+end
+function app.openWindow()
+    return app.watch()
+end
+function app.hostGame()
+    local net=app.net
+    if not net or net.combat or net.mode~="idle" or not net.grouped then return false end
+    local room=knownRoom()
+    if room then
+        app.watchHost,app.watchSid=room.name,room.sid
+        app.watch(); app.watchCollectUntil=0; app.nextWatchAttempt=0; app.updateWatch()
+        return false -- an established room wins over another local Host click
+    end
+    app.watchEnabled=true
+    local result=net:host("brawl")
+    if result then app.watchHost,app.watchSid=net.hostName,net.sid; showWindow() end
+    return result
+end
+function app.soloGame()
+    local net=app.net
+    if not net or net.combat or net.mode~="idle" then return false end
+    app.watchEnabled=false
+    local result=net:solo("brawl")
+    if result then showWindow() end
+    return result
+end
+function app.joinFight()
+    local net=app.net
+    if not net or net.combat or net.leaving or net.migrationActive then return false end
+    if app.input then app.input:release("Joining fight • mouse controls") end
+    local result=false
+    if net.mode=="client" or net.mode=="host" or net.mode=="solo" then
+        if not net.state or net.state.mode~="brawl" then net:notice("Legacy Co-op room • watch only in this build"); return false end
+        if net.role=="spectate" and net:count()>=25 and net:botCount()==0 then net:notice("Fight full • you remain watching"); return false end
+        if net.role=="spectate" then result=net:setRole("play") end
+    elseif net.mode=="idle" then
+        local room=knownRoom()
+        if not room or room.mode~="brawl" then return false end
+        if (room.count or 0)>=25 and (room.bots or 0)==0 then app.watch(); return false end
+        app.watchHost,app.watchSid,app.watchEnabled=room.name,room.sid,true
+        result=net:join(room.name,room.sid,"play","brawl")
+    end
+    draw(); return result
+end
+function app.leaveFight()
+    local net=app.net
+    if not net or (net.mode~="client" and net.mode~="host" and net.mode~="solo") or net.role~="play" or net.combat then return false end
+    if app.input then app.input:release("Watching • no captured keys") end
+    local result=net:setRole("spectate"); draw(); return result
+end
+function app.leaveGame()
+    if not app.net then return false end
+    app.watchEnabled=false; app.watchHost,app.watchSid,app.watchFullRoom=nil,nil,nil
+    if app.input then app.input:release("Left game • mouse controls") end
+    if app.feedback then app.feedback:observe(false) end
+    app.persist(); app.net:leave(); draw(); return true
 end
 local function slash(input)
     if not app.net then localMessage("Still loading; try again after entering the world."); return end
-    local command, argument = string.match(input or "", "^%s*(%S*)%s*(.-)%s*$")
-    command = string.lower(command or "")
-    if command == "help" then
-        localMessage("/rampage — toggle window. /rampage solo [coop|brawl] | host [coop|brawl] | find | join [Name-Realm] | spectate [Name-Realm] | play | start | leave")
-        localMessage("Click PLAY for WASD/arrows + hold Space. Escape releases keys. Dodge marked boss lanes! Co-op is default; Brawl is optional PvP. Host / solo can add up to 5 AI within 25 actors; spectators have no avatar or controls.")
-        localMessage("Open window discovers lobbies; joining is opt-in. No public chat or global bindings. Combat hides/releases keys; host combat pauses everyone. Closing does not leave. Optional local BlasterMaster defaults OFF.")
-    elseif command == "leave" then
-        if app.input then app.input:release("Left game — keys released") end
-        app.persist(); app.net:leave(); addon.UI.render()
-    elseif command == "solo" or command == "host" then
-        local mode=string.lower(argument)
-        if mode=="" then mode="coop" end
-        if mode~="coop" and mode~="brawl" then localMessage("Mode must be coop or brawl. Co-op is the default."); return end
-        if command=="host" then app.refreshRoster() end
-        local started=command=="solo" and app.net:solo(mode) or command=="host" and app.net:host(mode)
-        if started then showWindow() else localMessage(app.net.status) end
-    elseif command == "find" then
-        app.refreshRoster(); app.net:discover(); showWindow()
-    elseif command == "play" then
-        if app.net.role == "spectate" and app.net.setRole then
-            if app.net.state and app.net.state.mode=="brawl" then
-                localMessage("Brawl is PvP. Click JOIN BRAWL to switch from watching to playing.")
-            else app.net:setRole("play") end
-        end
-        showWindow() -- Chat commands do not capture keys: click PLAY afterward.
-    elseif command == "join" or command == "spectate" then
-        if command == "spectate" and app.net.mode ~= "idle" then
-            if app.input then app.input:release("Spectating — keys released") end
-            if app.net.setRole then app.net:setRole("spectate") end
-            showWindow(); return
-        end
-        local chosen
-        for _, lobby in ipairs(app.net:lobbyList()) do
-            if argument == "" or string.lower(lobby.name) == string.lower(argument) then chosen = lobby; break end
-        end
-        if chosen and command=="join" and chosen.mode=="brawl" then
-            addon.UI.lobbyName=chosen.name; showWindow()
-            localMessage("This lobby is BRAWL (PvP). Click JOIN BRAWL to consent, or SPECTATE to watch."); return
-        end
-        if chosen and app.net:join(chosen.name, chosen.sid, command == "spectate" and "spectate" or "play", chosen.mode or "coop") then showWindow()
-        else localMessage("No matching recent lobby. Use /rampage find, select a host, then Join.") end
-    elseif command == "start" then
-        app.net:start(); showWindow()
+    local command, argument=string.match(input or "", "^%s*(%S*)%s*(.-)%s*$")
+    command,argument=string.lower(command or ""),string.lower(argument or "")
+    if command=="help" or command=="info" or command=="settings" then
+        if app.openWindow() and addon.UI.setPanel then addon.UI.setPanel(command=="settings" and "settings" or "info") end
+    elseif command=="leave" then app.leaveGame()
+    elseif command=="solo" or command=="host" then
+        if argument~="" and argument~="brawl" then localMessage("This build exposes Brawl only. Co-op remains internal, not a public mode switch."); return end
+        if command=="host" then app.refreshRoster(); app.hostGame() else app.soloGame() end
+    elseif command=="find" or command=="watch" or command=="spectate" then
+        if app.net.role=="play" and app.net.mode~="idle" then app.leaveFight() end
+        app.watch()
+    elseif command=="join" or command=="play" then
+        -- Explicit public command requests Brawl participation, never key capture.
+        app.joinFight(); showWindow()
+    elseif command=="start" then
+        if (app.net.mode=="host" or app.net.mode=="solo") and app.net.state and app.net.state.mode=="brawl" then app.net:start(); showWindow() end
     else
-        if not addon.UI.toggle(app) then localMessage("Window and controls are disabled during combat.") end
+        if visible() then addon.UI.root:Hide() else app.openWindow() end
     end
 end
 
@@ -162,6 +239,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         RampageDB.best = math.floor(RampageDB.best)
         RampageDB.useBlasterMaster = RampageDB.useBlasterMaster == true
         RampageDB.muted = RampageDB.muted == true
+        RampageDB.reducedMotion = RampageDB.reducedMotion == true
         SLASH_RAMPAGE1 = "/rampage"; SlashCmdList.RAMPAGE = slash
         frame:UnregisterEvent("ADDON_LOADED")
         if IsLoggedIn and IsLoggedIn() then initialize() end
@@ -177,6 +255,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         end
     elseif event == "PLAYER_LEAVING_WORLD" then
         if app.input then app.input:release("Leaving world — keys released") end
+        if app.feedback then app.feedback:observe(false) end
         app.persist()
     elseif event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
         addon.UI.fit()
@@ -194,8 +273,10 @@ frame:SetScript("OnUpdate", function(_, elapsed)
     addon.UI.update(elapsed)
     elapsedNet, elapsedUI = elapsedNet + elapsed, elapsedUI + elapsed
     if elapsedNet >= 0.05 then
+        app.updateWatch()
         app.net:tick(elapsedNet); elapsedNet = 0; app.persist()
         if app.sound then app.sound:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
+        if app.feedback then app.feedback:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
     end
     if elapsedUI >= 0.033 then elapsedUI = 0; addon.UI.render() end
 end)

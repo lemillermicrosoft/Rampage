@@ -1,99 +1,120 @@
-# Rampage R4 protocol and engine contract
+# Rampage R5 protocol and engine contract
 
-R4 is intentionally incompatible with **R1, R2 and R3**, including publishedv0.3.0/R3. The approved moving-boss release receives a new matching TOC/runtime version through the release pipeline; every multiplayer participant needs the same new versioned R4 release, not an older candidate. Prefix remains `ToastRampage1`; every payload begins `R4`. Runtime is self-contained Lua 5.1: no serialized Lua, `loadstring`, external AI, services or packages. Addon AI is deterministic local rules executed **only by the host/solo authority**.
+## Compatibility and boundary
 
-## Public model/UI contract
+This is the **owner-approved R5 release from PR #11**, covering issues #10/#12. Every player must upgrade from publishedv0.4.0/R4 or the earlier `eef148f` candidate. The approved b98c93c candidate already uses this same R5 gameplay despite its old displayed version; prefer the versioned release ZIP for coordinated installs.
 
-- `state.mode = 'coop' | 'brawl'`, default `coop`. Co-op never damages allies. Brawl enables mutual human/human, human/AI and AI/AI punches.
-- `state.time` is authoritative **seconds as a number** (fractional seconds); wire precision is tenths, rounded upward. Host WoW combat freezes this clock, AI, hazards, KO and respawn timers. Guests never advance the model; UI may interpolate presentation, not apply damage.
-- `state.boss` remains numeric HP. `state.bossMotion` is nil outside play, otherwise `{id, phase='patrol'|'windup'|'attack'|'recover', remaining=seconds, fromLane, toLane, lanes={...}}`. The authoritative cycle is **5 seconds patrol → 7 seconds windup → 0.5 seconds attack → 5 seconds stationary recovery**. Patrol endpoints are integer lanes **2–6**, at most two lanes apart. All other phases have `fromLane==toLane`: attack origin and warning lanes lock on entry to windup and remain unchanged through attack. At least four lanes are safe from each pattern. Only entry into attack deals damage, once per actor; there is **no body-collision damage**. Threats continue both before and after the city shield falls.
-- `M.bossPosition(state, optionalElapsed=0)` is the shared **pure fractional ground position**, used by model hit checks, AI and UI. Optional nonnegative elapsed smooths only the already-known patrol segment and clamps at its endpoint, never predicts another phase or damage. Pause ignores elapsed. `M.bossInReach(state, player)` checks ground height and distance at most one lane from that actual position (not the former fixed lanes 3–5). City health still shields the boss. Clients must stop smoothing on stale snapshots and reset visual baselines on stage/replay/epoch changes; the model helper does not know wall-clock network staleness.
-- `M.bossAttackKind(state)` is `'ground'` for stage 3 and `'ranged'` otherwise. **Crumb Baron** takes one-lane reflected strolls and throws at one column (all heights). **Permitron** marches two lanes and beams two adjacent columns (all heights). **Snack Tax** pursues the nearest eligible actor by one lane and stomps its own plus adjacent ground lanes only; elevated actors are safe. **Queuezilla** alternates one-/two-lane reflected strides and impacts three adjacent columns **together**, not an untelegraphed sequential sweep. Ranged targets choose the nearest non-KO, unprotected actor at windup; equal distances keep the lowest slot. Targets do not follow later dodges. Pursuit may stop when aligned or clamped at the ground boundary; with no eligible target it strolls instead.
-- `M.syncHazard(state)` derives the compatibility-only `state.hazard={phase='warning'|'impact'|'idle', lanes, remaining, id}` view: windup→warning, attack→impact, patrol/recover→idle with empty lanes. Never mutate the hazard to drive the model; `bossMotion` is the sole authority. Stage load resets position to lane 4, cycle ID to 1, direction and AI action clocks. Replay also resets scores, KOs and game time.
-- `state.players[1..25]` retains `x,y,score,hit`; adds `hp,maxHP=100,ko=remainingSeconds,invuln=remainingSeconds,kos,bot,botID,name,protected`. `bot` and `protected` are booleans. Bot name/ID are optional for humans. `protected` means real-combat/unresponsive-human protection: no actions/damage, KO/immunity clocks frozen. No player exists for spectators.
-- All actions have a **0.2-second model gate**. Brawl damage has a separate **0.6-second punch gate** and strikes at most one other actor, within one lane and at exactly the same height. A punch deals **20 HP**, boss hazards **35 HP**. Damage cannot exceed 35 per application; normal damage gives 0.8 seconds immunity. Knockback is one ground lane away from the locked boss origin (or the attacking player's lane in Brawl), or one floor downward. KO lasts **4 seconds**, then respawns at lane 1 with 100 HP and **3 seconds immunity**. KO credit is `kos`, separate from city `score`; hazards never award player KO credit.
-- `M.BOT_NAMES`: Pebble Pal, Noodle Knight, Mochi Boots, Waffle Scout, Bumble Brick. At most five, unique fixed IDs. Decisions are evaluated at most every 0.35 seconds (0.4 at 0.1-second simulation ticks), use the same legal model actions, descend/dodge near ranged impacts and stay in safe lanes through impact, climb/smash the city, chase the actual exposed boss position and briefly scuffle in Brawl. Elevated AI does not unnecessarily descend into a ground-only stomp. No random numbers or physical-roster impersonation.
-- New actors and new stages receive full HP and spawn immunity. Replay clears city score and KOs. Model tick has bounded 0.1-second substeps; network clamps each elapsed update to 0.5 seconds, preventing an alt-tab/stalled host from replaying a backlog of attacks.
+Transport remains `ToastRampage1` addon messages over normal PARTY/RAID in one real group. Actual roster sender names are canonical Player-Realm identities. No guild-wide, instance-chat, independent-party bridge, external authority server, cryptographic authentication or Byzantine/competitive anti-cheat service is claimed. Correlation tokens/digests are not secrets/signatures. All input, membership and authority packets must pass actual sender/room/term/context validation.
 
-## Public network/adapter contract and capacity
+Owner authorized publication Oct30 at13:59. Primary main advances to the versioned release; the actual addon junction remains on frozen b98c93c during publishing. No forced reload, other-PC access or SavedVariables changes. Old rollback links to primary follow its updated main; use the preserved v0.4.0 archive/frozen runtime for old-version rollback. The release retains seven-second warnings; subsequent max-three-second tuning is separate.
 
-- `net.mode` remains transport mode `idle|solo|host|joining|client` (NOT game rules mode). `net.state.mode` is game mode. `net.role` remains existing `play|spectate`; spectator `net.slot` is nil.
-- `net:setMode(mode)` succeeds for idle selection or owner host/solo in **lobby or victory only**. Never mid-play/intermission. A host cannot change mode while any other real participant (player or spectator) is admitted: use a new lobby or have guests leave first. Admitted clients retain their consented mode and fail closed if an unsolicited world changes it. `net:host(mode)` / `net:solo(mode)` default to selected mode, initially Co-op. Solo starts immediately; pass selection to `solo(mode)` or select while idle. Existing `start/leave/discover/action/setRole/setRoster/count/spectatorCount/lobbyList` remain.
-- `net:addAI()` adds **one** bot; `net:removeAI()` removes **one oldest** bot. Host/solo only, at most 5 and within 25 total actors. Adding fails in combat. `net:botCount()` reports bots. `net.members[slot]` includes `{name,bot=true,botID,slot}` for bots; these are never real participants or roster identities.
-- **25 total active actors**, host permanently slot 1, plus **40 real participants** including host. AI does not use a real participant ID/budget. Thus 20 humans + 5 bots + 20 spectators is legal. A human admission or Play role request automatically removes the oldest bot if the actor cap is full. With no bots/free slots, requested Play falls back to spectator, with visible status. Spectating relinquishes avatar/score; there is no automatic human waitlist/promotion.
-- `join(hostName,sid,role,expectedMode)` defaults role to `play` and omitted expectedMode to the current advertisement. Explicit expectedMode must match advertised mode. J handshake and own admission record validate the selected mode. A changed-mode admission fails closed with a review/rejoin notice, never silently admits a Co-op selection into Brawl.
-- Lobby entries: `name,sid,phase,count,spectators,bots,mode`. Count includes bots; spectators counts real watchers only. UI must label mode before joining and distinguish bots, human actors and watchers.
-- `setCombat(bool)` pauses the host's whole simulation or sends a bounded guest combat-protection update. Guest controls also stop locally. Optional adapter `env.inCombat(canonicalName)` returns actual `UnitAffectingCombat` status for host roster polling; alternatively call `net:setMemberCombat(name,bool)`. Host protection is notify **OR** roster-combat fallback; a false/missing roster result cannot cancel a true guest notification. Roster fallback/protection is reconciled before the authoritative hazard/AI tick, so an already-detectable combat transition cannot take damage for one extra tick. Never use addon UI visibility as WoW combat status.
-- Combat notification is versioned, high-priority, and retried at most once/second until a snapshot confirms it; ordinary keepalive is every 8 seconds. This is friendly prototype protection, not competitive anti-cheat. Guests unresponsive >12 seconds are protected until refreshed/removed; expiry is 35 seconds. There is inherently a delivery/detection window: the host cannot know combat/disconnection before a notify or roster update arrives.
-- `N.new(env)` retains `name,now(),token(),send(payload),changed(net)` and adds optional `inCombat(name)`. `send` is one PARTY/RAID broadcast, never per-recipient whispers. Spectators receive the same world but cannot act/start/manage AI/mode.
+## Distinct identities and capacities
 
-## Trust boundary and packet grammar
+- Up to **40 real admitted participants**; up to **25 active model actors**.
+- Up to **5 AI** within the actor cap; AI never occupies real membership or voting seats.
+- Every real participant has its own member ID, name/token, admission generation and durable host-assigned `joined` ordinal. IDs/ordinals are not wall-clock times or local discovery order.
+- Role changes retain continuous membership and ordinal. Leave/rejoin is a new admission with a new ordinal. Lowest ordinal wins succession, with canonical name tie-break.
+- `ownMemberID`, actor `slot`, host identity and role are independent. A host can be a watcher with **no avatar**, including after succession. No fixed assumption that member1/actor1 remains host.
+- Watch→fight consumes no new human seat. At25 actors, a human can displace the oldest filler AI but not another human. A full human fight leaves the requester watching; no later automatic promotion.
+- Co-op remains an internal engine/protocol mode; public UI/adapter passes Brawl explicitly. Advertised/accepted mode is validated; receiving an unsolicited mode conversion fails closed. Watching is not PvP consent.
 
-The adapter validates prefix/distribution and canonicalizes the **actual WoW addon-message sender** to `Name-Realm`. Authorization uses that actual sender and current physical roster, never a payload-claimed actor. Only the selected host/session can publish worlds/members. Bot slots have no token/generation or member ID: ghost bot inputs cannot pass admission. Names: 1–96 bytes, no control characters or `|`; tokens: 1–16 ASCII alphanumeric bytes, public correlation values, not credentials. Trust the cooperative host; no claim of malicious-host protection.
+## Ordinary display worlds
 
-Exact field counts, literal `|`, decimal integers at most six digits without signs/exponents. Counters do not wrap. `p/s` = play/spectate; `c/b` = Co-op/Brawl; phase `l/p/c/v` = lobby/play/clear/victory.
+Worlds remain bounded atomic snapshots with explicit sequence/input epoch/member revision and authority term. They encode phase, stage, mode, game clock, shared building/boss HP, all human/bot positions, score/hit counters, HP/KO/immunity/protection/KOs and boss motion. A40-position member→actor mapping separates observers from actors; bot flags/IDs remain distinguishable from human membership.
 
-```text
-R4|Q
-R4|A|session|phase|actorCount|spectatorCount|c/b|botCount
-R4|J|session|joinToken|p/s|c/b
-R4|C|session|targetName|joinToken|admissionGeneration
-R4|B|session|joinToken|admissionGeneration
-R4|M|session|recordRevision|memberID|name|joinToken|admissionGeneration|activeSlot|roleSequence|c/b
-R4|M|session|recordRevision|memberID|-|-|0|0|0|c/b
-R4|S|session|snapshotSequence|part|partCount|bodyFragment
-R4|I|session|joinToken|admissionGeneration|inputSequence|seenSnapshot|inputEpoch|roleSequence|action
-R4|R|session|joinToken|admissionGeneration|roleSequence|p/s
-R4|K|session|joinToken|admissionGeneration|protectionSequence|inCombat0or1
-R4|L|session|joinToken|admissionGeneration
-R4|E|session
-```
+Boss movement includes only an authorized phase, remaining time, fixed segment origin/target and warned lanes/cycle ID. Model decoding validates legal stage-derived patterns and bounded phase durations. A world is accepted only as a complete valid assembly from the expected authority; malformed/oversize/incomplete/stale/duplicate/reordered worlds do not partially mutate displayed state.
 
-- Q/A: discovery at most one advert/2 seconds, normal every 5 seconds. Cache max 8 hosts/15 seconds. Actors 1–25, bots 0–5 and less than actors; `actors-bots+spectators <=40`.
-- J/C/B: host-issued challenge prevents delayed old joins/confirmations replacing newer admissions. J retries every 4 seconds/90-second total, challenges expire at 60 seconds and resend at most once/12 seconds. Unconfirmed/replayed J cannot mutate membership or refresh liveness. Matching B is idempotent. Reload/rejoin preserves an existing actor when applicable but obtains a fresh generation.
-- M: real member IDs 1–40, active slot 1–25 or 0 spectator. Revisions globally increment, compared **per ID**. Older/equal records cannot revert newer records; removals are tombstones. Host ID1/slot1 is mandatory. Names recover independently of worlds; renderers tolerate unknown human names. AI names derive directly from snapshot bot IDs, not this carousel.
-- R/I: monotonic per-admission role/input sequences. Inputs only L/R/U/D/P (no positions/damage claims); actor must exist, sender token/generation must match, accepted role sequence must match, seen world must be at/after epoch floor and no later than host captured sequence. Epoch changes at Start/replay/stage transition and **every host combat transition**. Spectator, duplicate, stale/future, ghost and pre-pause input is rejected. Too-fast input consumes its sequence without execution.
-- K: monotonic protection sequence; same-sequence conflicting combat value is rejected. Old admissions cannot toggle protection. Ordinary player/spectator keepalives continue in combat and hidden UI.
-- Unknown/non-roster senders cannot allocate buckets. Clients discard peer gameplay before allocating buckets/parsing. Roster changes prune discoveries, sender buckets, challenges and departed participants. No migration.
+Normal worlds use **176-byte body fragments**, at most **3 packets**, with ordinary assembly count3 and expiry6s. Packets are at most255 bytes. The nominal complete-world cadence remains **1.25 seconds (0.8Hz)**. Name/member records arrive independently; unknown or mismatched actor identity suppresses feedback attribution until metadata catches up. Display names are not an authentication substitute for roster sender validation.
 
-## Atomic compact worlds
+Input commands carry room, admission generation, requested/accepted role context, input sequence/epoch and term. Host rejects spectators, unknown/forged identities, replays, out-of-order/future/stale epochs, old terms and rate-invalid actions. Old host packets cannot regain authority by retaining a matching displayed room name. Host changes reset unsafe input/effect baselines rather than replay held commands.
 
-Exactly **three fragments** for current fixed-width worlds, each at most **176 body bytes**, **3 maximum / 528 assembled bytes**; every complete addon packet remains <=255 bytes. Sender finishes every queued fragment of a captured immutable snapshot before another capture; never coalesces half a world.
+## Host succession: authority and exact recovery
 
-Body has twelve comma-separated fields:
+`net.term` fences authority. `net.migration`/`migrationActive` describe an unsafe transfer/election; `net.leaving` permits asynchronous graceful departure. `state.paused` stops hazards, AI and gameplay while authority is unresolved. Focus loss, UI close and real combat do **not** elect a replacement. Actual Leave, roster departure or liveness failure starts the applicable path.
 
-```text
-phase,stage,bossHP,paused,inputEpoch,membershipRevision,floors,memberMap,mode,clock,bossMotion,players
-```
+### Complete checkpoints, not display snapshots
 
-- Stage 1–4, boss 0–16 and <=8+2*stage, paused 0/1, epoch/revision 1–999999.
-- Floors exactly nine digits 0–2. Member map exactly 40 characters indexed by real member ID: `.` absent, base36 slot 0–25 (`0` spectator). Slots unique, ID1 maps to1.
-- Mode c/b. Clock five base36 digits in deciseconds; decoded as seconds. Boss motion is `-` outside play, mandatory in play, or **eleven base36 characters**: `ID(4), phase p/w/a/r(1), seven-lane bitmask(2), remaining-deciseconds(2), fromLane(1), toLane(1)`. ID 1–1679615. Remaining must be positive: patrol/recover max50, windup max70, attack max5. Endpoints 2–6; patrol mask empty and distance exactly one for Crumb, two for Permitron, one/two by odd/even cycle ID for Queuezilla, at most one for Snack Tax. Other phases require identical endpoints. Recovery has empty mask; windup/attack have exactly 1/2/3/3 contiguous columns by stage, with Snack Tax's mask exactly origin±1 and origin. Ground/ranged kind derives from stage, never a sender-selected damage flag. Invalid clocks/routes/masks, nine-character old hazards and moving attack records fail the entire atomic snapshot.
-- A decoded patrol reconstructs the same position at decisecond-aligned authority ticks. For off-grid clocks, upward rounding introduces at most **0.04 lane** positional quantization (maximum speed 0.4 lane/sec). Received impact records are state only: neither decode nor client tick replays damage.
-- Players exactly 25 records of **16 characters** each; absent is sixteen `-`. Present base36 layout: `x(1),y(1),cityScore(4),punchCounter(2),HP(2),KO-deciseconds(2),immunity-deciseconds(1),KO-credit(2),flags(1)`.
-- Bounds x1–7/y0–3, score0–99999, hit0–999, HP0–100, KO0–40, immunity0–30, KOs0–1295. Elevated actor must be on tower lane. HP0 iff KO>0. Flags=`botID*2 + protected`; botID0 human or1–5 AI, each AI ID unique. Bots cannot claim real-combat protection or occupy a mapped human slot. Every human player agrees with member map. `maxHP=100` and friendly names reconstruct locally.
-- At most three in-progress assemblies, three fragments each; expiry6 seconds. Reject malformed lengths/counts/fields/maps. Reordered parts accepted, duplicate parts ignored. Only a **complete valid strictly newer** world publishes; epoch/revision cannot regress. Newer complete state prunes older assemblies. Incomplete traffic never refreshes host-world liveness. World map omission removes an expired own admission even if its tombstone was lost.
+Recovery streams include a complete bounded simulation/member checkpoint:
+- world state and exact game/phase/motion clocks;
+- exact KO/immunity and `nextAction`, `nextPunch`, `nextBot` timers;
+- participant names/tokens, generations, input/role/protection/keepalive counters, admission ordinals and member revisions;
+- actor mapping, next generation/ordinal counters, AI immutable IDs and insertion order;
+- current membership/authority fencing context needed to validate continuation.
 
-## Budgets, cadence and limitations
+Checkpoint payloads are length-prefixed and strictly parsed. An assembly is unusable until all fragments and its commit marker agree with the corruption digest. A delayed last fragment/commit cannot refresh the true age of old evidence. Recovery uses **at most2 assemblies,16,000 bytes/91 fragments each,120s evidence/assembly lifetime**. Stream cache/repair queues are bounded. No partial checkpoint can take authority.
 
-Unchanged per-instance limits: **8 messages/sec burst10**, **700 charged bytes/sec burst1000**, charging payload+**16** per packet; **128 coalesced queue keys**. Incoming per-roster-sender **16 messages/sec burst24**. No unbounded queue, payload-controlled loop or per-client full-world/roster resend.
+Ordinary recent display worlds may be newer but lack exact recovery state; they are never promoted into authoritative simulation merely because they look current. Progress after the last complete valid checkpoint can roll back after a crash. This can include positions, HP and score. The observer resets on host/term/epoch changes so rollback is not shown as a new hit/heal receipt.
 
-World snapshots every **1.25 seconds**, still three packets. Name carousel remains **one record/second** to leave headroom at maximum 96-byte canonical names. R4 adds two assembled body bytes versus R3, without raising any transport, queue, actor or participant cap. Changed membership/admission shares bounded FIFO priority; world/advertisements remain highest host priority. Inputs coalesce to one latest-action key, so lost/congested actions require another click, never client prediction/replay. Local action5/sec, host remote network gate0.16s plus model's0.2s gate. Keepalives stagger every8s; host removal35s/client timeout20s.
+### Graceful Leave
 
-Seven-second telegraphs deliberately exceed the observed maximum world gap in the tested fixture (see measurements below). This is not a transport latency guarantee: a severely delayed/lost stream can still hide a warning; the prototype cannot promise competitive fairness under arbitrary transport loss. Host combat does not stop snapshots/liveness. A **0.5-second attack can fall between 1.25-second snapshots**. The UI shows at most0.65 seconds of static confirmed-impact residue when a timely consecutive world moves the same already-visible windup cycle into recovery (at least3 recovery seconds remaining). It retains the old locked targets, never launches a late projectile, and never applies damage. Late join, skipped/stale worlds, pause, replay/epoch changes and hide/show reset that baseline instead. Staleness includes the actual previous sample age measured before a new timestamp replaces it, even if no render occurred while it became stale; age strictly greater than2.5s suppresses confirmation. Missing attack frames are not guaranteed to be shown. Clients must never extrapolate a future attack/damage. No extra event packets or increased traffic budget were added. Normal PARTY/RAID only, no instance-chat/battleground routing or host migration.
+The leaving host pauses, captures/sends a recovery checkpoint, identifies the ranked successor and waits for admitted recipients' readiness. A valid old-host finish authorizes the new term; the successor restores exact checkpoint state, advances term/input epoch and resumes only when safe. A watcher remains a watcher. The departing host's actor is removed as an ordinary departure; other actor/AI state is preserved.
 
-## Verification
+Leave is asynchronous and bounded, not a single-frame operation. If evidence/acknowledgments cannot finish before the deadline, the old host leaves and peers recover only with sufficient complete evidence. UI must not label transfer as already complete while `leaving` is true. Graceful timings and tested loss cases are recorded in QA; do not equate a simulated checkpoint transfer with live WoW transport performance.
 
-`node tests/run.cjs --suite=model` and `--suite=protocol` run pure-model/network suites (Fengari Lua5.3 execution with separate Lua5.1 syntax checks). Model covers default no-friendly-fire, mutual Brawl ranges/cooldowns, real hazard damage before/after shields, knockback, KO/respawn/immunity/protection/pause, deterministic AI-only four-boss completion and AI being hurt/KO'd.
+### Unexpected loss and membership fences
 
-Network bus delivers every broadcast independently to every other real node, with bounded buckets checked **on every send** and queue/assembly/sequence bounds checked every tick. Includes 40 maximum-name real participants, simultaneous joins/reconnect, actor/spectator/bot caps, human bot-eviction, advertised mode consent, protection replay/fallback, R1–R3 incompatibility, malformed security fixtures, loss/reorder/duplicates, four bosses and replay. Final measured results are recorded below; this is **simulation evidence, not a 40-WoW-client live proof**.
+Eligible candidates use the **certified committed admitted membership**, matching checkpoint/term/revision and actual roster identity—not every person in the native raid. Unopened/uninstalled group members are not voters. Stable small Rampage rooms inside larger native groups must remain recoverable.
 
-Recorded candidate evidence: **48 focused tests passed (22 model + 26 protocol)**, with Lua 5.1 syntax checks and a clean scoped `git diff --check`. All pre-existing model/network checks remain; old stationary-hazard fixtures now use the authoritative moving-boss cycle.
+Membership changes use a monotonic revision fence and acknowledgments across intersecting old/new admitted sets. A participant acknowledging a newer membership fence must not later vote from an older small checkpoint merely because the new certificate was lost. During incomplete membership evidence, simulation/recovery pauses. This prevents the unsafe shortcut of simply shrinking the voter set to whichever few clients are visible locally.
 
-- **22 model tests passed**. A single deterministic AI, with no humans driving it, clears all four moving bosses in **100.8 game seconds**. Five AI complete them in **50.8 seconds Co-op / 85.2 seconds Brawl**, with movement observed on every stage; a separate stationary-AI hazard fixture proves damage and KO. Additional fixtures prove actual motion, bounded speed, locked warnings, stationary recovery, true fractional hit/miss range, shield preservation, ground-only stomp, all-height ranged impacts, once-only damage, origin-relative knockback, no body collisions, deterministic partitioned motion, pause and stage/replay reset.
-- Maximum valid R4 world: **494 assembled body bytes**, **3 packets / 593 payload bytes / 641 charged bytes**, largest packet **209/255** (largest fragment **176**). This is an encoded-and-decoded maximum-field fixture, not an estimate.
-- Forty **96-byte-name real participants**: all guest admissions finish in **41.3 seconds** while already playing; simultaneous reconnect converges. Host averages **4.20 messages/sec, 618.7 payload B/sec, 685.9 charged B/sec**; maximum queue **53/128**, world gap **1.5 seconds**.
-- Forty real participants with **20 human actors + 5 AI + 20 spectators**: four moving bosses, host-combat pause, replay and sustained movement over **82.9 simulated seconds**. Every packet fans out to the other 39 nodes with deterministic **4.35% per-recipient loss**, 0–300ms jitter/reordering and duplicates. Human drivers chase from their own delayed snapshot positions, not a fixed hitbox or teleported world. Host **3.46 messages/sec, 457.8 payload B/sec, 513.1 charged B/sec**; whole group **36.00 messages/sec, 1375.9 payload B/sec**; **402 guest heartbeats**. Queue **41/128**, maximum world gap **4.0 seconds**. Both forty-member fixtures explicitly assert measured host averages below **700 charged B/sec / 8 messages/sec**, in addition to checking token buckets on every send.
-- R4-specific network checks round-trip **every phase of all four actual bosses**, reconstruct mid-patrol late-join position, reject malformed clocks/routes/masks and invalid new-phase worlds atomically, and prove repeated impact snapshots/client ticks do not replay damage.
-- A separate **three-second snapshot blackout** test verifies a warning is still visible after recovery and a legal network action dodges the impact. It does not claim safety under arbitrary loss.
-- Name recovery is independent of numeric worlds. Maximum-name admission is deliberately slower than R2 rather than violating the unchanged bandwidth ceiling. These are deterministic simulation rates, not live transport or render/frame-time benchmarks.
+Vote locks and monotonic floors live in a bounded40-entry host/session/term incarnation history outside ordinary Leave/reset. A replacement admission may acknowledge an older generation only while the same live process remembers unbroken never-voted lineage; the packet includes its first remembered generation. Already-emitted votes cannot be retired by Leave/rejoin, a newer-generation ACK, or the host simply not seeing that person in its roster. A late adopter emitting recovery witnesses also locks its old incarnation before changing term, even if it learned the quorum without casting an initial ballot. Explicit never-voted departure can retire only the authenticated current incarnation. Host-only asymmetric roster shrink is not a receipt.
+
+A real reload/process restart loses volatile lineage. It starts at the new admission generation and **cannot certify forgotten old generations**. If too few old voters remain to establish a safe membership fence—particularly a two-person room after a guest reload—the host pauses; participants may need to Leave and deliberately establish a fresh room. Ordinary in-process Leave/rejoin preserves lineage. This is a deliberate availability limit, not a claim of durable vote storage or transparent reload recovery.
+
+Candidates announce liveness, wait a bounded grace window, rank continuously admitted responsive members and require sufficient matching voting evidence before adopting. Host leases bound old-authority continuation; repeated/replayed liveness does not indefinitely extend a lease. Old terms, forged candidates, mismatched checkpoints, stale membership and duplicate votes do not authorize takeover. Subsequent late old-host messages or a rejoining old host do not reclaim leadership; rejoin is normal new admission.
+
+After adoption, participant liveness uses authenticated current election/ready evidence rather than old checkpoint last-seen ages. This prevents a healthy voter from being expired immediately on the first successor tick, which previously broke40-node crash convergence. Unseen crash peers remain protected during the bounded reconciliation window.
+
+Configured waits:20s host-snapshot timeout,14s old-host lease,16s election grace,40s bounded election window and35s graceful Leave deadline. These are stage bounds, not an assertion that every recovery fits the largest single timer; a crash includes detection plus election/convergence. Small/large measured timings are listed in QA.
+
+**Limits:** network partitions do not permit perfect consensus/availability without an external authority. An inconsistent/stale checkpoint, incomplete membership fence, insufficient admitted votes or prolonged/asymmetric partition may remain paused and require Leave/rejoin after the group heals. Crash recovery takes detection+election+convergence time, not an instantaneous handoff. Native roster observations are trusted and can differ temporarily. No split-brain-proof/Byzantine guarantee or zero-loss recovery is claimed.
+
+## Fair AI profiles and deterministic continuation
+
+Profile identity derives from immutable botID, not local actor slot or a client-side random seed:
+
+| botID | Profile | Decision cadence |
+|---|---|---|
+|1|Smasher, west-first roof-down demolition|0.4s|
+|2|Chaser, objectives near boss then exposed pursuit|0.3s|
+|3|Scrapper, short rival hunt then objective fallback|0.5s|
+|4|Dodger, earlier avoidance and safe objectives|0.6s|
+|5|Smasher, east-first bias|0.5s|
+
+Absolute authoritative game-clock scheduling uses a per-ID phase offset. Existing exact `nextBot`/action/PvP timers are checkpointed; no new profile labels or client randomness inflate the wire. `Model.botProfile(botID)` exposes local metadata for crew tooltips/Settings. Different target priorities and action traces—not only labels—are tested.
+
+Every profile calls the same legal Model actions as humans. Health100, PvP20 damage, boss35 damage,0.2s action gate,0.6s PvP damage cooldown, immunity, range and knockback remain unchanged. Co-op never inflicts ally punch damage. Scrapper diversions are bounded; every profile must progress city/boss objectives. Cautious does not mean invulnerable. Pause/replay/remove-readd/late-add and exact migrated behavior are covered by deterministic tests.
+
+## Faster boss contract
+
+Shared constants and aliases:
+- `PATROL_TIME` / `BOSS_PATROL`:3s
+- `WARNING_TIME` / `BOSS_WINDUP`:7s
+- `IMPACT_TIME` / `BOSS_ATTACK`:0.5s
+- `HAZARD_COOLDOWN` / `BOSS_RECOVER`:3s
+
+Cycle13.5s instead of17.5s;22.857% shorter. Patrol travels at most two lanes within2–6. Warning origin/targets lock, never follow a dodge; at least four lanes remain safe. Snack Tax hits only ground height; other bosses affect marked columns at all heights. Damage occurs once through Model, never through UI.
+
+`bossPosition`/`bossInReach` drive host combat, AI and presentation. Remote interpolation can advance only within the already received patrol segment, capped at its endpoint and2.5s sample age, freezing on pause/staleness. Warning/countdown labels are samples, not exact host time. A0.5s impact can fall between worlds; only timely consecutive known-warning evidence permits short static aftermath, not predicted damage or delayed projectile replay.
+
+## Feedback and input invariants
+
+`Feedback.lua` observes immutable authoritative numeric deltas without changing HP, score or the wire. Around a host/solo local action, it records before/after evidence and defers synchronous callbacks to preserve exact YOU attribution. Unrelated prior changes remain TEAM. Client successful sends only show swing intention; target loss is labelled TEAM aggregate.
+
+Health loss, score/fame and hit counters are distinct. Air swings create no contact sparks/numbers. Heals, respawn, stage/replay/role/known occupant changes, authority changes, stale/gapped/reordered samples and reopen rebaseline. Prior sample age is checked before timestamp replacement, including no-intermediate-render stalls; exactly2.5s remains timely. Queues cap32 and8 nonlocal receipts;12 reused labels prioritize local/boss clarity. Reduced Motion changes draw effects only.
+
+Mouse/Keyboard UI reflects actual capture. INFO/SETTINGS and safety releases never auto-recapture. Ordinary stage transitions preserve selected routing but clear held actions until fresh input. Combat reconciliation happens before model hazard/AI ticks; unavailable external combat state still has inherent notification/detection delay.
+
+## Resource and validation limits
+
+All normal, membership, recovery, repair and election traffic uses the same per-sender limits:
+- 8 messages/s with a 10-message burst;
+- 700 charged bytes/s with a 1,000-byte burst;
+- 16-byte charged accounting allowance per packet;
+- 255-byte maximum packet;
+- queue cap128 with bounded coalesced keys;
+- no unlimited assembly, retry or world-replay backlog.
+
+A short-run average above700 can consume the explicitly allowed initial burst; it is not proof of bypassing the token bucket. Sustained budget and exact per-emission token assertions are both measured. Do not report old R4 payload metrics as R5 recovery metrics. Final normal-world maxima,40-node admission/gameplay gaps, graceful/crash transfer timing, checkpoint sizes and AI continuation results appear in [QA.md](../QA.md).
+
+Headless evidence is Fengari Lua5.3 semantics with separate Lua5.1 grammar. Actual-TOC strict WoW mocks and source-derived previews test integration but cannot certify native frame-time, fonts/scaling, focus/taint or live PARTY↔RAID delivery. Start with solo, then two real clients on the same candidate, before scaling to a raid.

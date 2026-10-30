@@ -1,33 +1,25 @@
-# Rampage — roaming-boss iteration
+# Rampage — polished Brawl watch flow and host succession
 
-## User request
-After v0.3.0's AI/Brawl improvement, make bosses visibly **move and attack**. Keep unique/different levels as later backlog. Do not mix the next candidate into the household's released install.
+## Approved release boundary
+Owner Oct30,2026 requested the polished Brawl/watch UI, host succession, faster cycles and varied AI in PR11/issues10 and12. Candidate b98c93c passed174 tests, was explicitly installed at13:22 authorization and received positive in-game feedback. At13:59 the owner explicitly authorized publishing that identified build FIRST. Preserve its tested seven-second warning and13.5s full cycle; later maximum-three-second warning, radio/control styling and alignment changes are not part of this release. Blizzard assets/toggle work remains deferred.
 
-## Isolation / release boundary
-- Worktree: `C:\Users\leroy\repos\Rampage-boss-motion`, feature branch for issue #7, based on `7c27d1b` / v0.3.0.
-- Owner authorized current PR #8 publication on October29,2026 at12:57 after independent review and correction of the stale-render residue edge.
-- During development primary remained clean v0.3.0. Authorized publication now advances primary main to the new release; actual anniversary AddOns junction stays pointed at `C:\Users\leroy\repos\Rampage`, with no forced reload or SavedVariables edits. The feature worktree and old archives remain preserved.
-- Existing regular release pipeline infers the version bump, synchronizes TOC/app and tests before tag/upload. Both machines must use the same new R4 release, incompatible with v0.3.0/R3. No release/config/workflow/tooling changes or external audio/art. Authorization applies to this moving-boss iteration only.
+Release preparation is confined to documentation, UTF8-safe CurseForge notes consumption and preserving unrelated untracked primary files during generated-release staging. No approved gameplay changes except version synchronization. Main advances through a head-matched squash merge and default inferred regular release. Feature/old worktrees, v0.4.0/eef/b98 ZIPs and the installed frozen b98 candidate stay preserved. The original junction targeting primary no longer guarantees old-version rollback once main advances; the v0.4.0 ZIP/frozen runtime does. No junction replacement, forced reload, SavedVariables or other-PC access in this publication run.
 
-## Implemented playable scope
-- Shared pure boss position for movement, hit checks, AI pursuit and rendering. Ground patrol stays in lanes2–6 at ≤2 lanes per5s; no old fixed3–5 hitbox or body-contact damage.
-- Cycle: **5s patrol →7s locked windup →0.5s once-only attack →5s stationary recovery**. At least four safe lanes; origin and targets stop moving before warning starts.
-- Crumb Baron stroll/throw; Permitron march/beam; Snack Tax nearest-actor pursuit/ground-only stomp; Queuezilla alternating strides/simultaneous three-column barrage.
-- Moving shield, ground reach bracket, phase-specific limbs and48 fixed boss-cue textures connect actual origin/targets. Clients only smooth the known patrol segment and freeze on pause/staleness. No client damage or future-phase prediction.
-- If a timely consecutive world skips the short attack pose but confirms recovery of the same warned cycle, display a short static confirmed-impact residue, never a delayed projectile or catch-up damage. Late joins/gaps/stale/pause do not trigger it.
-- Existing default Co-op, opt-in Brawl consent, health/KO/respawn, five-AI/25-actor/40-real-participant caps and pre-tick guest combat protection retained.
-- Shipped control-persistence fix unchanged: selected keyboard/mouse survives ordinary level transitions, held inputs do not replay, explicit/safety releases never auto-recapture.
+## Design
+- Compact polished main game window with city prominent, succinct host/count/status and boss/local health. Instructions in INFO; audio, Reduced Motion and uncommon controls in SETTINGS. Secondary panels release capture and close with the main window/combat; closing panels does not recapture.
+- Mutually exclusive Mouse/Keyboard controls reflect actual capture state. Keyboard is explicit eligible-fighter opt-in; Mouse/Escape/chat/focus/combat/close release immediately. Ordinary intermissions retain selected mode but held inputs require fresh press next stage. Watchers cannot arm keyboard.
+- Brawl/PvP is the only exposed new-game/public mode; Co-op model/protocol support remains internal and tested. No silent conversion of legacy Co-op games. Watching is not consent to join combat; Join fight explicitly consents.
+- Explicit user-open intent enables bounded group discovery and automatic spectator subscription, never an avatar. Closed advertisements do not open or join. A sticky known room wins over another Host click. Leave disables rejoin until a new user open/Watch action. Close hides but retains admitted membership/tenure. Active-seat availability never auto-promotes a watcher.
+- R5 authority terms/recovery checkpoints permit longest continuously admitted real participant (fighter or watcher, not AI) to succeed the host. Host-assigned ordinals survive role changes, not leave/rejoin. Watcher promotion does not force an avatar or keyboard. Preserve complete world/score/motion/AI state and reset unsafe input/effect baselines. Missing authority/checkpoint evidence pauses rather than pretending safe takeover. Network partitions and checkpoint rollback limits must be explicit in QA, not hidden behind a perfect-consensus claim.
+- Faster boss cycle target:3s patrol +7s locked warning +0.5s attack +3s recovery =13.5s instead of17.5s. Keep safe escape lanes, shared moving hitbox and reachable recovery. No damage/HP rebalance. Migration pause freezes hazards/AI.
 
-## Verification
-- [x] Deterministic bounded movement, exact hit/miss/shield behavior, locked attack timing, stationary recovery, ground/ranged damage, pause and reset.
-- [x] AI chase and solo/five-AI four-boss completion in Co-op/Brawl.
-- [x] R4 strict compact-world round trips, late join, malformed/stale/reordered/lost worlds, no client impact replay.
-- [x] Actual40-node maximum-name/mixed-AI simulations within existing700 chargedB/s and8msg/s limits; no higher bandwidth allowance.
-- [x] Actual TOC/input/UI/audio regression suite; fixed object pools and source-derived patrol/windup/impact previews.
-- [ ] New native WoW graphics, focus/taint, two-client response, audio and large live raid checks.
+## AI profile addition
+Four deterministic archetypes: Smasher, Chaser, Scrapper and Dodger. Add AI automatically builds a mixed roster up to the existing five-bot cap. Profiles must differ in actual target priorities, legal cadence and deterministic biases—not only names/colors or random jitter. Every profile still completes objectives; chasers help while shielded, scrappers bound their Brawl diversion and fall back in Co-op, dodgers stay useful and damageable. No damage/HP bonuses or unseeded randomness. Immutable botID/game time or explicitly checkpointed counters preserve profile and behavior across R5 succession. Short-trace divergence, each-profile/mixed completion, legal action parity, pause/replay/remove-readd and migration continuity must be tested. Profile tags belong in crew tooltips/Settings rather than new main-screen clutter.
 
-## Deliberate limits
-Full worlds still every1.25s. Seven-second windup exceeds the measured4s gap but arbitrary loss can hide warnings. Clients may miss the0.5s attack pose; confirmed aftermath is presentation-only. Known-segment animation is not network precision. No host migration, malicious-host anti-cheat, map overhaul, new combat progression or contact physics.
+## Preserve existing strengths
+Confirmed incoming local recoil/tint/trails/numbers; YOU HIT exact local versus TEAM HIT remote aggregate attribution; no false air-swing contact; Reduced Motion static information; restored building windows/explicit layers; moving bosses/shared AI hitbox; input persistence and safety; optional audio defaultOFF/mute/dedupe. No new level themes, borrowed assets, dependencies or external service.
 
-## Later backlog — not this PR
-Distinct level silhouettes, tower arrangements, palettes and boss-specific scenery after the moving-boss playtest. New level work receives separate scope/approval; it is not silently bundled here.
+## Verification and handoff
+Adapt119 baseline expectations only where the requested behavior changes; retain actual coverage. Add real two-node adapter watch/fighter/leave packet tests, UI info/settings/radio/focus/capacity paths, internal Co-op tests and complete R5 succession tests including graceful/crash, oldest watcher, replay/forgery/oldhost/partition and40-node payload budgets. Measure actual new byte/message/gap limits before claiming readiness. Parse Lua5.1 separately from Fengari semantics, audit/diff check, inspect actual UI watch/fighter/info/settings mock geometry and bounded pools.
+
+Update PR #11 closing issues #10 and #12, not a second feature PR or a merge to simplify iteration. Package a unique head-labelled ZIP under `artifacts/rampage/ui-flow/`, with portable root and all entry hashes verified. R5 requires the same new candidate on all test participants; oldeef/R4 compatibility claims describe that old candidate only. Parent independently reviews and owns user delivery; the owner authorized local frozen-runtime installation at13:22. No merge/tag/upload/CurseForge polling/Discord/configuration/tooling/installed-skill changes. Unique levels remain deferred.
