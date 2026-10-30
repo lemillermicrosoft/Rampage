@@ -2,7 +2,7 @@
 ## Title: Rampage
 ## Notes: Cooperative city-smashing for Toast. Just FOUR MORE BOSSES!
 ## Author: GitHub Copilot c/o deehoc
-## Version: 0.5.0
+## Version: 0.6.0
 ## IconTexture: Interface\AddOns\Rampage\Media\icon.png
 ## SavedVariables: RampageDB
 
