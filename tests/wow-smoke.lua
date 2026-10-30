@@ -135,6 +135,10 @@ function runWoWSmoke()
         event("ADDON_LOADED", "Rampage"); assert(SlashCmdList.RAMPAGE); eq(SLASH_RAMPAGE1, "/rampage")
         loggedIn = true; event("PLAYER_LOGIN")
         assert(app.net); eq(app.net.name, "Tester-TestRealm"); eq(RampageDB.best, 0); eq(RampageDB.customKept, "yes")
+        eq(RampageDB.controlMode,"keyboard"); eq(app.sanitizeDB({}).controlMode,"keyboard")
+        eq(app.sanitizeDB({controlMode="mouse"}).controlMode,"mouse")
+        eq(app.sanitizeDB({controlMode="keyboard"}).controlMode,"keyboard")
+        eq(app.sanitizeDB({controlMode="legacy-radio"}).controlMode,"keyboard")
         eq(app.VERSION, assert(EXPECTED_VERSION, "TOC version required by runner")); assert(not ui.root); eq(#sent, 0)
     end)
     check("WoW mock: solo window, original geometry, buttons, damage and personal best", function()
@@ -142,8 +146,8 @@ function runWoWSmoke()
         eq(ui.root:GetWidth(), 900); eq(#ui.monsters, 25); eq(#ui.scores, 25); eq(#ui.floors, 9)
         assert(not app.input.focused); assert(not app.input.frame:IsShown()); eq(RampageDB.useBlasterMaster,false)
         eq(app.net.state.mode,"brawl"); assert(not ui.coop and not ui.brawl and not ui.spectate)
-        assert(ui.mouseMode.selected and not ui.keyboardMode.selected)
-        assert(string.find(ui.captureStatus:GetText(),"select Keyboard",1,true))
+        assert(ui.keyboardMode.selected and not ui.mouseMode.selected)
+        assert(string.find(ui.captureStatus:GetText(),"KEYBOARD PREFERRED",1,true))
         assert(not string.find(ui.captureStatus:GetText(),"Window hidden",1,true))
         local labels={"A/Left","W/Up","Space","S/Down","D/Right"}
         for i,b in ipairs(ui.controls) do eq(b.label:GetText(),labels[i]); assert(not b.label:GetText():find("[^%z\1-\127]")) end
@@ -369,7 +373,7 @@ function runWoWSmoke()
         f.scripts.OnKeyDown(f,"D"); f.scripts.OnKeyDown(f,"SPACE"); eq(calls,before) -- OS repeat blocked until key-up
         f.scripts.OnKeyUp(f,"D"); f.scripts.OnKeyUp(f,"SPACE"); eq(f.propagate,false)
         f.scripts.OnKeyDown(f,"D"); eq(calls,before+1); f.scripts.OnKeyUp(f,"D")
-        fresh(false); clear(); nextCity(); assert(not input.focused) -- mouse selection stays mouse
+        fresh(false); input:setPreference("mouse"); clear(); nextCity(); assert(not input.focused and input.preference=="mouse")
         for _,reason in ipairs({"escape","close","combat","chat","shortcut","focus"}) do
             fresh(true); clear(); assert(input.focused)
             if reason=="escape" then f.scripts.OnKeyDown(f,"ESCAPE")
@@ -400,13 +404,16 @@ function runWoWSmoke()
         assert(input:grab()); input:update(1); assert(not input.focused)
         assert(input:grab()); ui.root:Hide(); assert(not input.focused); eq(f.propagate,true); ui.root:Show()
         assert(input:grab()); event("PLAYER_LEAVING_WORLD"); assert(not input.focused)
-        local role,slot=app.net.role,app.net.slot
-        assert(input:grab()); app.net.role,app.net.slot="spectate",nil; step(0.05)
+        local role,slot,mode=app.net.role,app.net.slot,app.net.mode
+        assert(input:grab()); app.net.role,app.net.slot,app.net.mode="spectate",nil,"host"; input:update(0.05)
         assert(not input.focused); assert(not input:grab()); assert(not input:action("P")); ui.render()
-        assert(not ui.controls[3]:IsEnabled()); assert(not ui.capture:IsEnabled())
+        assert(not ui.controls[3]:IsEnabled()); assert(ui.capture:IsEnabled())
+        local sentBefore=#sent; click(ui.keyboardMode)
+        assert(input.preference=="keyboard" and not input.focused); eq(app.net.role,"spectate"); eq(app.net.slot,nil); eq(#sent,sentBefore)
+        assert(ui.keyboardMode.selected and ui.captureStatus:GetText():find("no avatar or captured keys",1,true))
         assert(not ui.health:IsShown() and not ui.healthBack:IsShown() and not ui.healthLabel:IsShown())
         eq(ui.personal:GetText(),"WATCHING")
-        app.net.role,app.net.slot=role,slot
+        app.net.role,app.net.slot,app.net.mode=role,slot,mode
         assert(input:grab()) -- leave focused for the combat test
     end)
     check("WoW flow: INFO and SETTINGS release real capture, block keys, and never auto-recapture", function()
@@ -418,12 +425,13 @@ function runWoWSmoke()
             f.scripts.OnKeyDown(f,"D"); local before=calls
             click(kind=="info" and ui.infoButton or ui.settingsButton)
             eq(ui.panelOpen,kind); assert(ui.panel:IsShown()); assert(not input.focused)
-            assert(ui.mouseMode.selected and not ui.keyboardMode.selected)
+            assert(ui.keyboardMode.selected and not ui.mouseMode.selected)
+            assert(ui.captureStatus:GetText():find("KEYBOARD PREFERRED",1,true))
             assert(next(input.held)==nil and not f:IsShown())
             assert(not input:grab() and not input:action("P"))
             f.scripts.OnKeyDown(f,"SPACE"); step(0.3); eq(calls,before)
             click(ui.panelClose); assert(not ui.panelOpen and not ui.panel:IsShown())
-            assert(not input.focused); assert(ui.mouseMode.selected)
+            assert(not input.focused); assert(ui.keyboardMode.selected)
         end
         click(ui.keyboardMode); click(ui.infoButton); ui.root:Hide()
         assert(not ui.panelOpen and not ui.panel.shown); ui.root:Show(); ui.render()
@@ -432,10 +440,10 @@ function runWoWSmoke()
         combat=true; event("PLAYER_REGEN_DISABLED")
         assert(not ui.panelOpen and not ui.panel.shown and not input.focused)
         combat=false; event("PLAYER_REGEN_ENABLED"); ui.render()
-        assert(ui.root:IsShown() and not ui.panel:IsShown() and ui.mouseMode.selected)
+        assert(ui.root:IsShown() and not ui.panel:IsShown() and ui.keyboardMode.selected)
         app.net.action=oldAction; assert(input:grab())
     end)
-    check("WoW flow: radio mirrors actual capture through intermission, all releases and migration pause", function()
+    check("WoW flow: preferred segment and separate capture status survive safety releases and migration", function()
         local net,input=app.net,app.input; local oldState=net.state
         local s=Addon.Model.new("brawl"); Addon.Model.addPlayer(s,1); Addon.Model.start(s); net.state=s
         ui.render(); click(ui.keyboardMode); assert(input.focused)
@@ -450,11 +458,16 @@ function runWoWSmoke()
             elseif reason=="focus" then windowFocus=false; input:update(0.01); windowFocus=true
             elseif reason=="modifier" then ctrlDown=true; input:update(0.01); ctrlDown=false
             else click(ui.mouseMode) end
-            ui.render(); assert(not input.focused and ui.mouseMode.selected and not ui.keyboardMode.selected,reason)
+            assert(not input.focused,reason.." must release before render")
+            if reason=="mouse" then assert(ui.mouseMode.selected and not ui.keyboardMode.selected)
+            else assert(ui.keyboardMode.selected and not ui.mouseMode.selected) end
+            ui.render()
+            assert(ui.captureStatus:GetText():find(reason=="mouse" and "MOUSE PREFERRED" or "KEYBOARD PREFERRED",1,true))
             for _,b in ipairs(ui.controls) do assert(b:IsShown()) end
         end
         click(ui.keyboardMode); s.paused=true; net.migrationActive=true; input:update(0.01); ui.render()
-        assert(not input.focused and ui.mouseMode.selected)
+        assert(not input.focused and ui.keyboardMode.selected)
+        assert(ui.captureStatus:GetText():find("KEYBOARD PREFERRED",1,true))
         assert(ui.lobby:GetText():find("HOST HANDOFF",1,true)); assert(ui.banner.title:GetText():find("HOST HANDOFF",1,true))
         net.migrationActive=nil; s.paused=false; ui.render(); assert(not input.focused)
         net.state=oldState; assert(input:grab())
@@ -515,6 +528,72 @@ function runWoWSmoke()
         assert(ui.WIDTH*scale<=670 and ui.HEIGHT*scale<=510)
         UIParent:SetSize(1600,1000); ui.fit(); eq(ui.root:GetScale(),1)
     end)
+    check("WoW UI polish: segmented preference stays truthful while capture status changes separately",function()
+        local s=app.net.state; local oldPhase=s.phase; s.phase="play"; ui.render()
+        local function style(preference,captured)
+            eq(app.input.preference,preference); eq(app.input.focused,captured)
+            eq(ui.mouseMode.selected,preference=="mouse"); eq(ui.keyboardMode.selected,preference=="keyboard")
+            for i,b in ipairs({ui.mouseMode,ui.keyboardMode}) do
+                local active=i==1 and preference=="mouse" or i==2 and preference=="keyboard"
+                eq(b.label:GetText(),i==1 and "Mouse" or "Keyboard")
+                assert(not b.label:GetText():find("[%[%]]"))
+                eq(b.width,112); eq(b.height,30); eq(#b.selectedBorder,4)
+                assert(b.selectedFill~=b.base and b.indicator~=b.selectedFill)
+                eq(b.indicator.alpha,active and 1 or 0); eq(b.selectedFill.alpha,active and 1 or 0)
+                for _,edge in ipairs(b.selectedBorder) do eq(edge.layer,"OVERLAY"); eq(edge.alpha,active and 1 or 0.18) end
+            end
+            ui.render(); assert(ui.captureStatus:GetText():find(captured and "KEYBOARD ACTIVE" or string.upper(preference).." PREFERRED",1,true))
+        end
+        click(ui.mouseMode); style("mouse",false); click(ui.keyboardMode); style("keyboard",true)
+        -- No render/update between key event and preference assertion: safety
+        -- release must not lie by switching the persisted selection to Mouse.
+        app.input.frame.scripts.OnKeyDown(app.input.frame,"ESCAPE"); style("keyboard",false)
+        click(ui.keyboardMode); style("keyboard",true); app.input:release("safety fixture"); style("keyboard",false)
+        click(ui.keyboardMode); s.phase="clear"; app.input:update(0.01); style("keyboard",true)
+        s.phase="play"; app.input:update(0.01); style("keyboard",true)
+        click(ui.infoButton); style("keyboard",false); click(ui.panelClose); style("keyboard",false)
+        s.phase=oldPhase; ui.render()
+    end)
+    check("WoW UI polish: shared rows, HP baseline and footer reserve do not overlap",function()
+        local function bounds(o)
+            local p=o.point; assert(p and (p[1]=="TOPLEFT" or p[1]=="BOTTOMLEFT"))
+            local h=o.height>0 and o.height or (o.fontSize or 12)*1.3
+            return {x=p[4],y=p[1]=="TOPLEFT" and -p[5] or o.parent.height-p[5]-h,w=o.width,h=h}
+        end
+        local function separate(a,b,gap)
+            local x,y=bounds(a),bounds(b); local g=gap or 0
+            assert(x.x+x.w+g<=y.x or y.x+y.w+g<=x.x or x.y+x.h+g<=y.y or y.y+y.h+g<=x.y,"UI rectangles overlap: "..x.x..","..x.y..","..x.w..","..x.h.." versus "..y.x..","..y.y..","..y.w..","..y.h)
+        end
+        eq(ui.infoButton.point[5],ui.settingsButton.point[5]); eq(ui.close.point[5],ui.infoButton.point[5])
+        separate(ui.infoButton,ui.settingsButton,8); separate(ui.settingsButton,ui.close,8)
+        eq(ui.primary.point[5],ui.solo.point[5]); eq(ui.primary.point[5],ui.fight.point[5])
+        eq(ui.roomHint.point[5],ui.primary.point[5]-8); separate(ui.solo,ui.roomHint,20)
+        eq(ui.mouseMode.point[5],ui.keyboardMode.point[5]); separate(ui.mouseMode,ui.keyboardMode,2)
+        eq(ui.controls[1].point[5],ui.mouseMode.point[5]); separate(ui.keyboardMode,ui.controls[1],20)
+        for i=1,4 do separate(ui.controls[i],ui.controls[i+1],8) end
+        for _,o in ipairs({ui.crewTitle,ui.crewSub,ui.personal,ui.team,ui.healthLabel,ui.healthBack,ui.best}) do
+            eq(o.point[4],10); eq(o.width,188)
+        end
+        for _,pair in ipairs({{ui.personal,ui.team},{ui.team,ui.healthLabel},{ui.healthLabel,ui.healthBack},{ui.healthBack,ui.best},
+            {ui.captureStatus,ui.feedbackStatus},{ui.feedbackStatus,ui.status},{ui.status,ui.footerHint}}) do separate(pair[1],pair[2],4) end
+        eq(ui.city.point[5],ui.crew.point[5]); assert(not ui.boss.badge:IsShown())
+        local rail=bounds(ui.bossGround.label); assert(rail.y+rail.h<=ui.bossGround.height+2)
+    end)
+    check("WoW UI polish: low HP, shield, KO and long room text retain fixed readable cells",function()
+        local net,s=app.net,app.net.state; local p=s.players[net.slot]
+        local oldHP,oldKO,oldShield,oldHost,oldStatus=p.hp,p.ko,p.invuln,net.hostName,net.status
+        local width,height=ui.primary.width,ui.primary.height
+        p.hp,p.ko,p.invuln=7,0,0; ui.render()
+        eq(ui.healthLabel:GetText(),"7 / 100 HP"); eq(ui.health.width,188*0.07); eq(ui.health.color[1],1)
+        p.hp,p.invuln=100,3; ui.render(); assert(ui.healthLabel:GetText():find("SHIELD 3s",1,true))
+        p.hp,p.ko,p.invuln=0,4,0; ui.render(); eq(ui.healthLabel:GetText(),"KO - respawn in 4s")
+        net.hostName="ExtraordinarilyLongToastMaster-AnotherVeryLongRealmName"
+        net.status=string.rep("Long connection status ",8); ui.render()
+        assert(not ui.lobby:GetText():find(net.hostName,1,true)); assert(#ui.status:GetText()<=78)
+        eq(ui.footerHint:GetText(),"Close hides  /  Settings > Leave game exits")
+        eq(ui.primary.width,width); eq(ui.primary.height,height)
+        p.hp,p.ko,p.invuln,net.hostName,net.status=oldHP,oldKO,oldShield,oldHost,oldStatus; ui.render()
+    end)
     check("WoW mock: 25-player fixed geometry pools after 500 animated renders", function()
         local frameCount, textureCount, fontCount = #frames, #textures, #fonts
         eq(#ui.hazardLanes,7); eq(#ui.particles,72); eq(#ui.bossCues,4)
@@ -531,7 +610,7 @@ function runWoWSmoke()
                 p.hp,p.ko,p.invuln=i%20==1 and 100 or math.max(1,p.hp-1),0,0
             end
             app.net.state.stage=1+math.floor((i-1)/125)%4
-            bossFixture(app.net.state,i%3==0 and "attack" or "windup",i%3==0 and 0.3 or 6,4,4,{1,3,7},i)
+            bossFixture(app.net.state,i%3==0 and "attack" or "windup",i%3==0 and 0.3 or Addon.Model.BOSS_WINDUP,4,4,{1,3,7},i)
             -- Exactly 500 UI renders; no adapter OnUpdate secretly doubles them.
             now=now+0.05; ui.burst(316,180,12,"hit"); ui.render()
             if ui.damageLabels[1].font:IsShown() then sawFeedback=true end
@@ -547,10 +626,10 @@ function runWoWSmoke()
     check("WoW mock: authoritative HP / KO / shield cues and seven warning / impact / recovery lanes", function()
         local s=app.net.state; local p=s.players[1]
         p.hp,p.maxHP,p.ko,p.invuln,p.kos=100,100,0,0,2
-        bossFixture(s,"windup",6,4,4,{1,3,7}); ui.render()
+        bossFixture(s,"windup",Addon.Model.BOSS_WINDUP,4,4,{1,3,7}); ui.render()
         local framesBefore,texturesBefore,fontsBefore=#frames,#textures,#fonts
         assert(ui.hazardLanes[1]:IsShown() and ui.hazardLanes[3]:IsShown() and ui.hazardLanes[7]:IsShown())
-        assert(not ui.hazardLanes[2]:IsShown()); assert(ui.hazardText:GetText():find("IN 6s",1,true))
+        assert(not ui.hazardLanes[2]:IsShown()); assert(ui.hazardText:GetText():find("IN "..math.ceil(Addon.Model.BOSS_WINDUP).."s",1,true))
         local flavors={}
         for stage=1,4 do s.stage=stage; ui.render(); flavors[ui.hazardText:GetText()]=true end
         local flavorCount=0; for _ in pairs(flavors) do flavorCount=flavorCount+1 end; eq(flavorCount,4)
@@ -606,10 +685,10 @@ function runWoWSmoke()
         now=now+10; ui.render(); eq(ui.boss.drawLane,x)
         net.inSeq=12; net.lastSnapshot=now; bossFixture(s,"patrol",0.2,2,4,{},8); ui.render()
         now=now+1; ui.render(); eq(ui.boss.drawLane,4); eq(s.bossMotion.phase,"patrol"); eq(s.bossMotion.remaining,0.2)
-        net.inSeq=13; net.lastSnapshot=now; bossFixture(s,"windup",7,4,4,{2},8); ui.render()
+        net.inSeq=13; net.lastSnapshot=now; bossFixture(s,"windup",Addon.Model.BOSS_WINDUP,4,4,{2},8); ui.render()
         local arm=ui.boss.armR.point[5]; now=now+1; ui.render()
-        eq(ui.boss.drawLane,4); eq(ui.boss.armR.point[5],arm); eq(s.bossMotion.remaining,7)
-        assert(ui.hazardText:GetText():find("IN 7s",1,true)); assert(ui.hazardText:GetText():find("last sample",1,true))
+        eq(ui.boss.drawLane,4); eq(ui.boss.armR.point[5],arm); eq(s.bossMotion.remaining,Addon.Model.BOSS_WINDUP)
+        assert(ui.hazardText:GetText():find("IN "..math.ceil(Addon.Model.BOSS_WINDUP).."s",1,true)); assert(ui.hazardText:GetText():find("last sample",1,true))
         net.state,net.mode,net.inSeq,net.lastSnapshot=oldState,oldMode,oldSeq,oldSnap; ui.resetBossVisuals()
     end)
     check("WoW mock: four causal attack poses, locked cues, no damage or per-frame launch", function()
@@ -620,7 +699,7 @@ function runWoWSmoke()
         for stage=1,4 do
             s.stage=stage; bossFixture(s,"patrol",3,2,4,{},20+stage); ui.render()
             local patrolArm=ui.boss.armR.point[5]
-            bossFixture(s,"windup",6,4,4,stage==4 and {2,4,6} or {3},20+stage); ui.render()
+            bossFixture(s,"windup",Addon.Model.BOSS_WINDUP,4,4,stage==4 and {2,4,6} or {3},20+stage); ui.render()
             local windupArm=ui.boss.armR.point[5]; assert(windupArm~=patrolArm)
             assert(ui.bossCues[1].parts[1]:IsShown()); assert(not ui.bossCues[1].parts[12]:IsShown())
             eq(ui.bossCues[1].originX,31+3*95)
@@ -707,7 +786,7 @@ function runWoWSmoke()
         eq(ui.bossVisual.cueChanges,1); assert(not ui.bossCues[1].parts[1]:IsShown()); eq(ui.particleCursor,cursor)
         net.inSeq=24; s._epoch=4; bossFixture(s,"patrol",Addon.Model.BOSS_PATROL,2,3,{},1); ui.render()
         eq(ui.bossVisual.cueChanges,1); eq(ui.boss.drawLane,2)
-        s.time=0; bossFixture(s,"windup",7,3,3,{4},1); ui.render(); eq(ui.bossVisual.cueChanges,1)
+        s.time=0; bossFixture(s,"windup",Addon.Model.BOSS_WINDUP,3,3,{4},1); ui.render(); eq(ui.bossVisual.cueChanges,1)
         s.stage=2; bossFixture(s,"patrol",Addon.Model.BOSS_PATROL,4,6,{},1); ui.render()
         eq(ui.bossVisual.cueChanges,1); assert(not ui.bossCues[1].parts[1]:IsShown())
         ui.root:Hide(); assert(not ui.bossVisual); ui.root:Show(); ui.render()
@@ -723,7 +802,8 @@ function runWoWSmoke()
         click(b); ui.render(); assert(app.input.focused and b.selected)
         click(b); assert(app.input.focused and b.selected,"selected radio cannot toggle off")
         click(ui.mouseMode); assert(not b.selected and ui.mouseMode.selected and not app.input.focused)
-        app.net.state.players[1].ko=1; ui.render(); assert(not b:IsEnabled()); eq(b.alpha,0.38)
+        app.net.state.players[1].ko=1; ui.render(); assert(b:IsEnabled() and not b.selected); eq(b.alpha,1)
+        click(b); assert(not app.input.focused and b.selected) -- preference allowed while KO; capture remains off
         app.net.state.players[1].ko=0; ui.render()
     end)
     check("WoW mock: optional audio off/missing/None/failed SFX and no provider fallback", function()
@@ -773,13 +853,13 @@ function runWoWSmoke()
         SlashCmdList.RAMPAGE("leave"); ui.root:Hide()
         grouped = true; event("GROUP_ROSTER_UPDATE")
         assert(app.net.roster["Friend-OtherRealm"] and app.net.roster["Friend-TestRealm"])
-        event("CHAT_MSG_ADDON", "OtherPrefix", "R5|A|abc|l|1|0|b|0|1", "PARTY", "Friend-OtherRealm")
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R5|A|abc|l|1|0|b|0|1", "GUILD", "Friend-OtherRealm")
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R5|A|abc|l|1|0|b|0|1", "PARTY", "Stranger-Realm")
+        event("CHAT_MSG_ADDON", "OtherPrefix", "R6|A|abc|l|1|0|b|0|1", "PARTY", "Friend-OtherRealm")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R6|A|abc|l|1|0|b|0|1", "GUILD", "Friend-OtherRealm")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R6|A|abc|l|1|0|b|0|1", "PARTY", "Stranger-Realm")
         event("CHAT_MSG_ADDON", "ToastRampage1", "R4|A|old|l|1|0|b|0", "PARTY", "Friend-OtherRealm")
         eq(#app.net:lobbyList(), 0)
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R5|A|abc|l|1|0|b|0|1", "PARTY", "Friend-OtherRealm")
-        event("CHAT_MSG_ADDON", "ToastRampage1", "R5|A|def|l|1|0|b|0|1", "PARTY", "Friend")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R6|A|abc|l|1|0|b|0|1", "PARTY", "Friend-OtherRealm")
+        event("CHAT_MSG_ADDON", "ToastRampage1", "R6|A|def|l|1|0|b|0|1", "PARTY", "Friend")
         eq(#app.net:lobbyList(), 2); assert(not ui.root:IsShown()); eq(app.net.mode,"idle")
     end)
     check("WoW mock: local hurt audio is opt-in, authoritative, rare and spectator-quiet", function()
@@ -797,7 +877,7 @@ function runWoWSmoke()
         a.net.role,a.net.slot="spectate",nil; t=4.3; state.players[1].hp=50; sound:observe(true); eq(calls,2)
         BlasterMaster_GetSfxPath,PlaySoundFile=nil,nil
     end)
-    check("WoW flow: real R5 auto-watch only on user open, explicit fight consent, close retention and Leave suppression", function()
+    check("WoW flow: real R6 auto-watch only on user open, explicit fight consent, close retention and Leave suppression", function()
         local net=app.net; net.lobbies={}; app.watchEnabled=false
         local serial=0; local cursor=#sent
         local remote=Addon.Protocol.new({name="Friend-OtherRealm",now=function() return now end,
@@ -819,10 +899,10 @@ function runWoWSmoke()
         local id=net.ownMemberID; local joined=remote.participants[id].joined; assert(joined>1)
         click(ui.close); exchange(2); eq(net.mode,"client"); eq(remote.participants[id].joined,joined)
         app.openWindow(); ui.render(); click(ui.primary); exchange(4)
-        eq(net.role,"play"); assert(net.slot and net.state.players[net.slot]); assert(not app.input.focused)
+        eq(net.role,"play"); assert(net.slot and net.state.players[net.slot]); assert(app.input.focused)
         eq(remote.participants[id].joined,joined); eq(ui.primary.label:GetText(),"Leave fight")
-        click(ui.keyboardMode); assert(app.input.focused); click(ui.primary); exchange(4)
-        eq(net.role,"spectate"); eq(net.slot,nil); assert(not app.input.focused and ui.mouseMode.selected)
+        click(ui.primary); exchange(4)
+        eq(net.role,"spectate"); eq(net.slot,nil); assert(not app.input.focused and ui.keyboardMode.selected)
         eq(remote.participants[id].joined,joined)
         click(ui.settingsButton); click(ui.leave); exchange(5)
         eq(net.mode,"idle"); assert(not app.watchEnabled); assert(ui.root:IsShown()); assert(not ui.panelOpen)
@@ -866,14 +946,14 @@ function runWoWSmoke()
             net.memberVersions[id]=id
             if slot then Addon.Model.addPlayer(net.state,slot) end
         end
-        -- R5 synthetic membership must be certified through real authenticated
+        -- R6 synthetic membership must be certified through real authenticated
         -- receipt parsing, not made playable by clearing paused/config flags.
         -- This fixture mocks the admitted peers; the full 40-node transport and
         -- loss suite independently proves that real nodes emit these receipts.
         local function certifyMembers()
             for id=2,40 do
                 local m=net.participants[id]; net.roster[m.name]=true
-                assert(net:receive(m.name,table.concat({"R5","O",net.sid,m.token,m.generation,net.revision,
+                assert(net:receive(m.name,table.concat({"R6","O",net.sid,m.token,m.generation,net.revision,
                     net.snapshotSeq,m.generation,net.term},"|")))
             end
             net:membershipTick(now)
@@ -908,10 +988,10 @@ function runWoWSmoke()
         SlashCmdList.RAMPAGE("leave"); eq(app.net.mode, "idle"); eq(RampageDB.best, 20)
     end)
     check("WoW mock: explicit slash Brawl join, group departure reset and local INFO help", function()
-        event("CHAT_MSG_ADDON",Addon.Protocol.PREFIX,"R5|A|abc|l|1|0|b|0|1","RAID","Friend-OtherRealm")
+        event("CHAT_MSG_ADDON",Addon.Protocol.PREFIX,"R6|A|abc|l|1|0|b|0|1","RAID","Friend-OtherRealm")
         SlashCmdList.RAMPAGE("join"); eq(app.net.mode,"joining"); eq(app.net.role,"play")
         step(0.1)
-        local joined=false; for _,m in ipairs(sent) do if m.payload:find("R5|J|abc|",1,true) then joined=true end end
+        local joined=false; for _,m in ipairs(sent) do if m.payload:find("R6|J|abc|",1,true) then joined=true end end
         assert(joined)
         grouped,raided=false,false; event("GROUP_ROSTER_UPDATE"); eq(app.net.mode,"idle")
         local before=#sent; SlashCmdList.RAMPAGE("help"); eq(ui.panelOpen,"info"); eq(#sent,before)
@@ -955,7 +1035,7 @@ function runWoWSmoke()
         click(ui.fight); eq(net.role,"spectate"); eq(net.slot,nil)
         assert(not app.input:grab()); eq(net.participants[id].joined,joined)
         -- A real adapter tick certifies the no-guest host role change. UI must
-        -- not bypass the R5 pause merely because this fixture clicks instantly.
+        -- not bypass the R6 pause merely because this fixture clicks instantly.
         step(0.1); assert(not net.membershipPending)
         click(ui.settingsButton); assert(ui.addAI:IsEnabled() and ui.removeAI:IsEnabled()); click(ui.panelClose)
         click(ui.close); eq(net.mode,"host"); eq(net.role,"spectate")
@@ -967,7 +1047,7 @@ function runWoWSmoke()
     end)
     check("WoW flow: existing legacy Co-op room stays unchanged and has no casual join/PvP path", function()
         local net=app.net; grouped=true; event("GROUP_ROSTER_UPDATE")
-        event("CHAT_MSG_ADDON",Addon.Protocol.PREFIX,"R5|A|legacy|p|4|2|c|0|1","PARTY","Friend-OtherRealm")
+        event("CHAT_MSG_ADDON",Addon.Protocol.PREFIX,"R6|A|legacy|p|4|2|c|0|1","PARTY","Friend-OtherRealm")
         app.openWindow(); ui.render(); assert(not ui.primary:IsEnabled()); eq(ui.primary.label:GetText(),"Legacy room")
         assert(ui.modeLabel:GetText():find("CO-OP",1,true)); click(ui.primary); eq(net.mode,"idle")
         SlashCmdList.RAMPAGE("play"); eq(net.mode,"idle")
@@ -1033,6 +1113,13 @@ local function prepareFlowPreview(scene)
         net.state.players[1].x,net.state.players[1].y=2,1
         ui.render(); return
     end
+    if scene=="flow-matched" then
+        -- Screenshot-like solo recovery scene, identical state in both source
+        -- revisions. No warning duration difference masks the layout comparison.
+        local s=net.state; s.players[1].hp,s.players[1].invuln=65,0
+        app.db.best=2380; bossFixture(s,"recover",2,5,5,{},1)
+        ui.baseline=nil; app.feedback:observe(false); ui.render(); return
+    end
     if scene=="flow-ai" or scene=="flow-ai-settings" then
         assert(Addon.Model.botProfile,"AI preview requires implemented model profiles")
         for _=1,5 do assert(net:addAI()) end
@@ -1059,7 +1146,7 @@ local function prepareFlowPreview(scene)
     Addon.Model.start(s)
     for slot,p in pairs(s.players) do p.x,p.y,p.score,p.kos,p.invuln=slot,slot==4 and 1 or 0,slot*120,slot%2,0 end
     s.hp[1],s.hp[5],s.hp[9]=1,1,0
-    bossFixture(s,"windup",6,4,4,{3},4)
+    bossFixture(s,"windup",Addon.Model.BOSS_WINDUP,4,4,{3},4)
     net.mode,net.hostName,net.sid,net.inSeq,net.lastSnapshot="client","Toast-TestRealm","flow-preview",10,now
     net.slot,net.role,net.ownMemberID=2,"play",2
     s._activeCount,s._botCount,s._spectators=6,2,3
@@ -1081,6 +1168,16 @@ local function prepareFlowPreview(scene)
         s.players[2].hp=82; s.hp[1]=0; ui.render()
         eq(ui.damageLabels[1].font:GetText(),"YOU -18 HP")
     end
+    if scene=="flow-lowhp" then
+        s.players[2].hp,s.players[2].invuln=7,0
+        ui.render(); now=now+1.2; ui.render() -- settled red HP, not a full-width loss trail
+        assert(ui.healthLabel:GetText():find("7 / 100 HP",1,true))
+    elseif scene=="flow-longnames" then
+        local host="ExtraordinarilyLongToastMaster-AnotherVeryLongRealmName"
+        net.hostName=host; net.members[1].name=host; net.participants[1].name=host
+        net.status="Connected to "..host.."; authoritative sampled city with a lengthy status explanation"
+        ui.render()
+    elseif scene=="flow-keyboard" then click(ui.keyboardMode); assert(app.input.focused) end
     if scene=="flow-info" then click(ui.keyboardMode); click(ui.infoButton)
     elseif scene=="flow-settings" then click(ui.settingsButton) end
     ui.render()
@@ -1118,7 +1215,7 @@ function prepareWoWPreview(scene)
     if scene=="spectator" then app.net.role,app.net.slot="spectate",nil end
     if chaos then
         -- Match the real stage patterns: Permitron pair or simultaneous barrage.
-        bossFixture(s,"windup",6,4,4,s.stage==2 and {3,4} or {2,3,4},3)
+        bossFixture(s,"windup",Addon.Model.BOSS_WINDUP,4,4,s.stage==2 and {3,4} or {2,3,4},3)
         for slot,p in pairs(s.players) do p.x,p.y=slot,0 end
         s.players[1].invuln=0
     end
@@ -1133,7 +1230,7 @@ function prepareWoWPreview(scene)
         -- ground positions make a static floating-boss regression obvious.
         for slot,p in pairs(s.players) do p.x,p.y=slot,0; p.invuln=0 end
         if scene=="boss-patrol" then bossFixture(s,"patrol",2.5,2,3,{},7)
-        elseif scene=="boss-windup" then bossFixture(s,"windup",5,4,4,{2},8)
+        elseif scene=="boss-windup" then bossFixture(s,"windup",Addon.Model.BOSS_WINDUP,4,4,{2},8)
         else bossFixture(s,"attack",0.2,5,5,{3},9) end
         ui.baseline=nil; ui.resetBossVisuals()
     end
@@ -1185,5 +1282,5 @@ function captureWoWPreview()
     end
     for _,o in ipairs(textures) do add(o,"rect") end
     for _,o in ipairs(fonts) do add(o,"text") end
-    return '{"width":'..root.w..',"height":'..root.h..',"shapes":['..table.concat(records,",")..']}'
+    return '{"width":'..root.w..',"height":'..root.h..',"pools":{"frames":'..#frames..',"textures":'..#textures..',"fonts":'..#fonts..'},"shapes":['..table.concat(records,",")..']}'
 end

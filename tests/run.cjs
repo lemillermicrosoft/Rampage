@@ -16,6 +16,8 @@ if (pureRuntime.join(',') !== 'Model.lua,Protocol.lua,Feedback.lua' || runtime.i
   throw new Error('Feedback must load after Model/Protocol and before Input/UI in the real TOC');
 }
 const suite = process.argv.find(x => x.startsWith('--suite='))?.split('=')[1];
+const filter = process.argv.find(x => x.startsWith('--filter='))?.slice(9);
+if (filter && !/^[a-zA-Z0-9 _:-]+$/.test(filter)) throw new Error('Unsafe test filter');
 if (suite && !suites[suite]) throw new Error('Unknown suite: ' + suite);
 const tests = suite ? [suites[suite]] : Object.values(suites);
 const selectedRuntime = suite && suite !== 'wow' && suite !== 'flow' ? pureRuntime : runtime;
@@ -41,6 +43,7 @@ execute(`
   TEST_COUNT = 0
   EXPECTED_VERSION = '${tocVersion}'
   function check(name, run)
+    if ${filter ? `not string.find(name, '${filter}', 1, true)` : 'false'} then return end
     local ok, err = pcall(run)
     if not ok then error('FAIL: ' .. name .. '\\n' .. tostring(err), 0) end
     TEST_COUNT = TEST_COUNT + 1

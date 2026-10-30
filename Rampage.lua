@@ -55,6 +55,27 @@ local function newToken()
     return string.format("%x%x%x", GetServerTime() % 16777216, math.random(0, 65535), serial)
 end
 
+local function sanitizeDB(db)
+    if type(db) ~= "table" then db = {} end
+    if type(db.best) ~= "number" or db.best ~= db.best or db.best < 0 or db.best > 99999 then db.best = 0 end
+    db.best = math.floor(db.best)
+    db.useBlasterMaster = db.useBlasterMaster == true
+    db.muted = db.muted == true
+    db.reducedMotion = db.reducedMotion == true
+    -- Existing explicit Mouse/Keyboard choices survive. Fresh, nil and invalid
+    -- legacy values intentionally migrate to the new Keyboard default.
+    if db.controlMode ~= "mouse" and db.controlMode ~= "keyboard" then db.controlMode = "keyboard" end
+    return db
+end
+app.sanitizeDB = sanitizeDB
+function app.applyPreferredCapture()
+    if not app.captureAfterJoin or not app.input or app.net.requestedRole ~= nil then return false end
+    if app.net.role == "play" and app.input:canPlay() then
+        app.captureAfterJoin = false; return app.input:grab()
+    end
+    if app.net.mode ~= "joining" and app.net.role == "spectate" then app.captureAfterJoin = false end
+    return false
+end
 local function initialize()
     if app.net then return end
     app.db = RampageDB
@@ -79,8 +100,13 @@ local function initialize()
         changed = function()
             app.persist()
             if app.input then
-                if not app.input:canCapture() then app.input:release("Game changed — keys released")
+                if not app.input:canCapture() then app.input:release("Game changed - keys released")
                 else app.input:syncPhase() end
+                -- Preference alone never joins or captures. Only an explicit
+                -- successful Join fight arms this one-shot activation, and only
+                -- the accepted play role may consume it. Safety release after
+                -- activation cannot re-arm itself.
+                app.applyPreferredCapture()
             end
             if app.sound then app.sound:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
             if app.feedback then app.feedback:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
@@ -170,7 +196,8 @@ end
 function app.joinFight()
     local net=app.net
     if not net or net.combat or net.leaving or net.migrationActive then return false end
-    if app.input then app.input:release("Joining fight • mouse controls") end
+    app.captureAfterJoin = app.input and app.input.preference == "keyboard" or false
+    if app.input then app.input:release(app.captureAfterJoin and "Keyboard preferred • waiting for fighter role" or "Mouse preferred • joining fight") end
     local result=false
     if net.mode=="client" or net.mode=="host" or net.mode=="solo" then
         if not net.state or net.state.mode~="brawl" then net:notice("Legacy Co-op room • watch only in this build"); return false end
@@ -183,18 +210,21 @@ function app.joinFight()
         app.watchHost,app.watchSid,app.watchEnabled=room.name,room.sid,true
         result=net:join(room.name,room.sid,"play","brawl")
     end
+    if not result then app.captureAfterJoin=false end
     draw(); return result
 end
 function app.leaveFight()
     local net=app.net
     if not net or (net.mode~="client" and net.mode~="host" and net.mode~="solo") or net.role~="play" or net.combat then return false end
-    if app.input then app.input:release("Watching • no captured keys") end
+    app.captureAfterJoin=false
+    if app.input then app.input:release(app.input.preference=="keyboard" and "Keyboard preferred • watching • no captured keys" or "Mouse preferred • watching") end
     local result=net:setRole("spectate"); draw(); return result
 end
 function app.leaveGame()
     if not app.net then return false end
     app.watchEnabled=false; app.watchHost,app.watchSid,app.watchFullRoom=nil,nil,nil
-    if app.input then app.input:release("Left game • mouse controls") end
+    app.captureAfterJoin=false
+    if app.input then app.input:release(app.input.preference=="keyboard" and "Left game • Keyboard preferred, inactive" or "Left game • Mouse preferred") end
     if app.feedback then app.feedback:observe(false) end
     app.persist(); app.net:leave(); draw(); return true
 end
@@ -234,12 +264,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         local name = ...
         if name ~= addonName then return end
-        if type(RampageDB) ~= "table" then RampageDB = {} end
-        if type(RampageDB.best) ~= "number" or RampageDB.best ~= RampageDB.best or RampageDB.best < 0 or RampageDB.best > 99999 then RampageDB.best = 0 end
-        RampageDB.best = math.floor(RampageDB.best)
-        RampageDB.useBlasterMaster = RampageDB.useBlasterMaster == true
-        RampageDB.muted = RampageDB.muted == true
-        RampageDB.reducedMotion = RampageDB.reducedMotion == true
+        RampageDB = sanitizeDB(RampageDB)
         SLASH_RAMPAGE1 = "/rampage"; SlashCmdList.RAMPAGE = slash
         frame:UnregisterEvent("ADDON_LOADED")
         if IsLoggedIn and IsLoggedIn() then initialize() end
@@ -254,7 +279,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
             app.net:receive(canonical(sender), payload)
         end
     elseif event == "PLAYER_LEAVING_WORLD" then
-        if app.input then app.input:release("Leaving world — keys released") end
+        app.captureAfterJoin=false
+        if app.input then app.input:release("Leaving world - keys released") end
         if app.feedback then app.feedback:observe(false) end
         app.persist()
     elseif event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
@@ -274,7 +300,7 @@ frame:SetScript("OnUpdate", function(_, elapsed)
     elapsedNet, elapsedUI = elapsedNet + elapsed, elapsedUI + elapsed
     if elapsedNet >= 0.05 then
         app.updateWatch()
-        app.net:tick(elapsedNet); elapsedNet = 0; app.persist()
+        app.net:tick(elapsedNet); elapsedNet = 0; app.persist(); app.applyPreferredCapture()
         if app.sound then app.sound:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
         if app.feedback then app.feedback:observe(addon.UI.root and addon.UI.root:IsShown() or false) end
     end

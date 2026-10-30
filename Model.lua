@@ -2,7 +2,7 @@
 local _, addon = ...
 local M = { MAX_PLAYERS = 25, MAX_BOTS = 5, LANES = 7, FLOORS = 3,
     MAX_HP = 100, ACTION_INTERVAL = 0.2, PUNCH_INTERVAL = 0.6,
-    BOT_INTERVAL = 0.35, PATROL_TIME = 3, WARNING_TIME = 7, IMPACT_TIME = 0.5, HAZARD_COOLDOWN = 3 }
+    BOT_INTERVAL = 0.35, PATROL_TIME = 3, WARNING_TIME = 3, IMPACT_TIME = 0.5, HAZARD_COOLDOWN = 3 }
 -- Public phase aliases share the existing model/presentation timing constants.
 M.BOSS_PATROL, M.BOSS_WINDUP = M.PATROL_TIME, M.WARNING_TIME
 M.BOSS_ATTACK, M.BOSS_RECOVER = M.IMPACT_TIME, M.HAZARD_COOLDOWN
@@ -263,8 +263,10 @@ function M.botAction(s, slot)
     if not profile then return nil end
     local ground = M.bossAttackKind(s) == "ground"
     -- Match action-clock tolerance at boundaries; 0.05/0.1s partitions must not
-    -- choose different targets because a warning is 5.50000000000001 seconds.
-    local avoid = h and ((h.phase == "warning" and h.remaining <= (profile.key == "dodger" and 5.5 or 3) + 0.00001) or h.phase == "impact")
+    -- choose different targets because a warning is 2.50000000000001 seconds.
+    -- R6 short warnings: Dodger reacts after 0.5s, others after 1s. Their
+    -- ordinary decision cadences still apply; no immunity or extra movement.
+    local avoid = h and ((h.phase == "warning" and h.remaining <= (profile.key == "dodger" and 2.5 or 2) + 0.00001) or h.phase == "impact")
     if avoid and threatened(h, p.x) and (not ground or p.y == 0) then
         if p.y > 0 then return "D" end
         local target, distance
@@ -289,7 +291,7 @@ end
 local function moveBoss(s, dt)
     if not s.bossMotion then patrol(s, 4) end
     -- Carry fractional overshoot across a boundary, so 0.05/0.1s updates lock
-    -- the same warning and never shorten the seven-second escape window.
+    -- the same warning and never shorten the three-second escape window.
     while dt > 0.00000001 do
         local b = s.bossMotion
         local used = math.min(dt, b.remaining)

@@ -1,12 +1,12 @@
-# Rampage R5 protocol and engine contract
+# Rampage R6 protocol and engine contract
 
 ## Compatibility and boundary
 
-This is the **owner-approved R5 release from PR #11**, covering issues #10/#12. Every player must upgrade from publishedv0.4.0/R4 or the earlier `eef148f` candidate. The approved b98c93c candidate already uses this same R5 gameplay despite its old displayed version; prefer the versioned release ZIP for coordinated installs.
+This is the **unreleased issue13 short-warning candidate**, based on published v0.5.0. R6 deliberately rejects R5/v0.5.0 and the frozen b98c93c build: packet widths match but model duration bounds, AI decisions and checkpoint simulation semantics changed. All participants must install the same new head-labelled candidate; the unchanged0.5.0 display alone proves nothing about compatibility.
 
 Transport remains `ToastRampage1` addon messages over normal PARTY/RAID in one real group. Actual roster sender names are canonical Player-Realm identities. No guild-wide, instance-chat, independent-party bridge, external authority server, cryptographic authentication or Byzantine/competitive anti-cheat service is claimed. Correlation tokens/digests are not secrets/signatures. All input, membership and authority packets must pass actual sender/room/term/context validation.
 
-Owner authorized publication Oct30 at13:59. Primary main advances to the versioned release; the actual addon junction remains on frozen b98c93c during publishing. No forced reload, other-PC access or SavedVariables changes. Old rollback links to primary follow its updated main; use the preserved v0.4.0 archive/frozen runtime for old-version rollback. The release retains seven-second warnings; subsequent max-three-second tuning is separate.
+The owner authorized this follow-up after publishing v0.5.0, not another release. Primary remains at c0f906d/v0.5.0 and the installed junction remains frozen b98c93c. Candidate installation is a separate verified checkpoint. No forced reload, other-PC access, SavedVariables or release-tool changes.
 
 ## Distinct identities and capacities
 
@@ -24,7 +24,7 @@ Worlds remain bounded atomic snapshots with explicit sequence/input epoch/member
 
 Boss movement includes only an authorized phase, remaining time, fixed segment origin/target and warned lanes/cycle ID. Model decoding validates legal stage-derived patterns and bounded phase durations. A world is accepted only as a complete valid assembly from the expected authority; malformed/oversize/incomplete/stale/duplicate/reordered worlds do not partially mutate displayed state.
 
-Normal worlds use **176-byte body fragments**, at most **3 packets**, with ordinary assembly count3 and expiry6s. Packets are at most255 bytes. The nominal complete-world cadence remains **1.25 seconds (0.8Hz)**. Name/member records arrive independently; unknown or mismatched actor identity suppresses feedback attribution until metadata catches up. Display names are not an authentication substitute for roster sender validation.
+Normal worlds use **176-byte body fragments**, at most **3 packets**, with ordinary assembly count3 and expiry6s. Packets are at most255 bytes. The ordinary capture interval remains **1.25 seconds (0.8Hz)**. On the actual patrol-to-windup transition, `nextSnapshot` becomes due immediately. `snapshot()` retains its partial-world guard and returns success only after enqueuing one complete world; the scheduler moves the next deadline only on success. A pending older world drains before the warning is captured, with no extra1.25s wait. This reuses existing state keys/priority/buckets and does not add an event stream, raise budgets or predict impact. Membership/election traffic retains its existing priority. Name/member records arrive independently; unknown or mismatched actor identity suppresses feedback attribution until metadata catches up. Display names are not an authentication substitute for roster sender validation.
 
 Input commands carry room, admission generation, requested/accepted role context, input sequence/epoch and term. Host rejects spectators, unknown/forged identities, replays, out-of-order/future/stale epochs, old terms and rate-invalid actions. Old host packets cannot regain authority by retaining a matching displayed room name. Host changes reset unsafe input/effect baselines rather than replay held commands.
 
@@ -83,19 +83,21 @@ Profile identity derives from immutable botID, not local actor slot or a client-
 
 Absolute authoritative game-clock scheduling uses a per-ID phase offset. Existing exact `nextBot`/action/PvP timers are checkpointed; no new profile labels or client randomness inflate the wire. `Model.botProfile(botID)` exposes local metadata for crew tooltips/Settings. Different target priorities and action traces—not only labels—are tested.
 
-Every profile calls the same legal Model actions as humans. Health100, PvP20 damage, boss35 damage,0.2s action gate,0.6s PvP damage cooldown, immunity, range and knockback remain unchanged. Co-op never inflicts ally punch damage. Scrapper diversions are bounded; every profile must progress city/boss objectives. Cautious does not mean invulnerable. Pause/replay/remove-readd/late-add and exact migrated behavior are covered by deterministic tests.
+Under three-second warnings, Dodger starts avoiding at2.5s remaining and other profiles at2s, subject to normal decision cadence. Every profile calls the same legal Model actions as humans. Health100, PvP20 damage, boss35 damage,0.2s action gate,0.6s PvP damage cooldown, immunity, range and knockback remain unchanged. Co-op never inflicts ally punch damage. Scrapper diversions are bounded; every profile must progress city/boss objectives. Cautious does not mean invulnerable. Pause/replay/remove-readd/late-add and exact migrated behavior are covered by deterministic tests.
 
 ## Faster boss contract
 
 Shared constants and aliases:
 - `PATROL_TIME` / `BOSS_PATROL`:3s
-- `WARNING_TIME` / `BOSS_WINDUP`:7s
+- `WARNING_TIME` / `BOSS_WINDUP`:3s
 - `IMPACT_TIME` / `BOSS_ATTACK`:0.5s
 - `HAZARD_COOLDOWN` / `BOSS_RECOVER`:3s
 
-Cycle13.5s instead of17.5s;22.857% shorter. Patrol travels at most two lanes within2–6. Warning origin/targets lock, never follow a dodge; at least four lanes remain safe. Snack Tax hits only ground height; other bosses affect marked columns at all heights. Damage occurs once through Model, never through UI.
+Cycle9.5s instead of13.5s;29.630% shorter. The warning-to-impact interval is actually three game-clock seconds, not a relabelled/hidden seven-second telegraph. Patrol travels at most two lanes within2–6. Warning origin/targets lock, never follow a dodge; at least four lanes remain safe. Snack Tax hits only ground height; other bosses affect marked columns at all heights. Damage occurs once through Model, never through UI.
 
 `bossPosition`/`bossInReach` drive host combat, AI and presentation. Remote interpolation can advance only within the already received patrol segment, capped at its endpoint and2.5s sample age, freezing on pause/staleness. Warning/countdown labels are samples, not exact host time. A0.5s impact can fall between worlds; only timely consecutive known-warning evidence permits short static aftermath, not predicted damage or delayed projectile replay.
+
+Healthy two-client tests use actual protocol delivery/input,200ms RTT,20fps ticks,0.5/0.75s reaction and250ms legal repeated inputs across80 boss/height/snapshot-phase cases. Worst notice0.8s and minimum escape margin0.3s are measured, not promised universally. A blackout longer than the warning is explicitly tested to hide the complete warning while applying exactly one authoritative hit; later delivery heals the displayed world without replaying damage. No blanket three-second fairness promise for40-node loss/congestion or slower users.
 
 ## Feedback and input invariants
 
@@ -103,7 +105,7 @@ Cycle13.5s instead of17.5s;22.857% shorter. Patrol travels at most two lanes wit
 
 Health loss, score/fame and hit counters are distinct. Air swings create no contact sparks/numbers. Heals, respawn, stage/replay/role/known occupant changes, authority changes, stale/gapped/reordered samples and reopen rebaseline. Prior sample age is checked before timestamp replacement, including no-intermediate-render stalls; exactly2.5s remains timely. Queues cap32 and8 nonlocal receipts;12 reused labels prioritize local/boss clarity. Reduced Motion changes draw effects only.
 
-Mouse/Keyboard UI reflects actual capture. INFO/SETTINGS and safety releases never auto-recapture. Ordinary stage transitions preserve selected routing but clear held actions until fresh input. Combat reconciliation happens before model hazard/AI ticks; unavailable external combat state still has inherent notification/detection delay.
+Mouse/Keyboard UI persists a local preference (`keyboard` fresh default; valid saved `mouse` retained) separately from actual capture. Changing preference while idle/lobby/watching emits no protocol packet and cannot alter role/avatar. Only explicit Join can arm one-shot Keyboard activation after an accepted play role reaches active play; denial/full fallback remains spectator/inactive. Leave fight and all safety releases retain preference but release capture; INFO/SETTINGS and safety releases never auto-recapture. Ordinary stage transitions preserve active routing but clear held actions until fresh input. Combat reconciliation happens before model hazard/AI ticks; unavailable external combat state still has inherent notification/detection delay.
 
 ## Resource and validation limits
 
@@ -115,6 +117,6 @@ All normal, membership, recovery, repair and election traffic uses the same per-
 - queue cap128 with bounded coalesced keys;
 - no unlimited assembly, retry or world-replay backlog.
 
-A short-run average above700 can consume the explicitly allowed initial burst; it is not proof of bypassing the token bucket. Sustained budget and exact per-emission token assertions are both measured. Do not report old R4 payload metrics as R5 recovery metrics. Final normal-world maxima,40-node admission/gameplay gaps, graceful/crash transfer timing, checkpoint sizes and AI continuation results appear in [QA.md](../QA.md).
+A short-run average above700 can consume the explicitly allowed initial burst; it is not proof of bypassing the token bucket. Sustained budget and exact per-emission token assertions are both measured. Do not report prior R5 payload metrics as current R6 measurements. Final normal-world maxima,40-node admission/gameplay gaps, graceful/crash transfer timing, checkpoint sizes and AI continuation results appear in [QA.md](../QA.md).
 
 Headless evidence is Fengari Lua5.3 semantics with separate Lua5.1 grammar. Actual-TOC strict WoW mocks and source-derived previews test integration but cannot certify native frame-time, fonts/scaling, focus/taint or live PARTY↔RAID delivery. Start with solo, then two real clients on the same candidate, before scaling to a raid.
