@@ -72,6 +72,10 @@ local function selected(b, yes) b.selected=yes; b:paint() end
 local function show(object, yes) if yes then object:Show() else object:Hide() end end
 local function short(name) return (string.match(name or "", "^[^-]+") or name or "") end
 local function color(slot) return palette[(slot - 1) % #palette + 1] end
+local function profileDetail(p)
+    local profile=p and p.bot and addon.Model.botProfile and addon.Model.botProfile(p.botID)
+    return profile and ("AI • "..profile.label.." • "..profile.description.."\n") or (p and p.bot and "AI • " or "")
+end
 local function modeName(mode) return mode=="brawl" and "BRAWL" or "CO-OP" end
 local function health(bar, p, width)
     local fraction=p and math.max(0,math.min(1,(p.hp or 100)/(p.maxHP or 100))) or 0
@@ -122,9 +126,12 @@ function UI.fit()
     if w and h and w > 0 and h > 0 then UI.root:SetScale(math.min(1, (w-30)/UI.WIDTH, (h-40)/UI.HEIGHT)) end
 end
 function UI.selectedLobby()
-    local list = UI.app.net:lobbyList()
-    for _, lobby in ipairs(list) do if lobby.name == UI.lobbyName then return lobby end end
-    if list[1] then UI.lobbyName = list[1].name end
+    local app=UI.app
+    local list=app.net:lobbyList()
+    for _,lobby in ipairs(list) do
+        if lobby.name==app.watchHost and lobby.sid==app.watchSid then return lobby end
+    end
+    table.sort(list,function(a,b) if a.name==b.name then return a.sid<b.sid end return a.name<b.name end)
     return list[1]
 end
 function UI.create(app)
@@ -148,54 +155,37 @@ function UI.create(app)
     rect(root,1,1,898,2,0.55,0.31,0.21); rect(root,0,656,900,4,0.98,0.59,0.28)
     rect(root,18,609,45,33,0.74,0.35,0.18); rect(root,23,614,35,26,0.98,0.73,0.4)
     rect(root,29,620,5,4,0.25,0.14,0.13); rect(root,45,620,5,4,0.25,0.14,0.13)
-    text(root,11,76,-17,540):SetText("< TOAST >  /  POCKET ARCADE")
-    text(root,24,75,-32,650):SetText("RAMPAGE: FOUR MORE BOSSES!")
+    text(root,10,76,-16,450):SetText("TOAST  /  POCKET ARCADE")
+    text(root,25,75,-30,450):SetText("RAMPAGE")
+    UI.modeLabel=text(root,11,250,-39,340)
+    UI.infoButton=button(root,"INFO",642,-21,88,function() UI.setPanel("info") end)
+    UI.settingsButton=button(root,"SETTINGS",738,-21,102,function() UI.setPanel("settings") end)
     UI.close = button(root,"X",850,-16,30,function() root:Hide() end)
     hover(UI.close,"Close window","Releases keyboard. Does not leave the game. /rampage reopens it.")
-    UI.selectedMode="coop"
-    UI.primary = button(root,"HOST LOBBY",20,-76,184,function()
-        local net, lobby = app.net, UI.displayedLobby
-        if net.mode == "idle" then
-            if lobby then net:join(lobby.name,lobby.sid,"play",lobby.mode or "coop")
-            elseif net.grouped then net:host(UI.selectedMode)
-            else net:solo(UI.selectedMode) end
-        elseif net.role == "spectate" then if net.setRole then net:setRole("play") end
-        elseif net.state and (net.state.phase == "lobby" or net.state.phase == "victory") then net:start()
-        elseif app.input then app.input:grab() end
+    UI.selectedMode="brawl"
+    UI.primary = button(root,"Host Brawl",20,-478,164,function()
+        local net,s=app.net,app.net.state
+        if net.mode=="idle" then
+            if UI.displayedLobby then app.joinFight() else app.hostGame() end
+        elseif (net.mode=="host" or net.mode=="solo") and s and s.mode=="brawl" and (s.phase=="lobby" or s.phase=="victory") then
+            net:start()
+        elseif net.role=="spectate" then app.joinFight()
+        elseif net.mode=="solo" then app.leaveGame()
+        else app.leaveFight() end
         UI.render()
     end,true)
-    UI.join, UI.host, UI.start = UI.primary, UI.primary, UI.primary
-    hover(UI.primary,"Play together","JOIN BRAWL explicitly opts into player-versus-player hits. Co-op is the default. Host Lobby allows mode / AI setup before Start. PLAY captures keys; Escape releases them.")
-    UI.spectate = button(root,"SPECTATE",212,-76,120,function()
-        if app.input then app.input:release("Spectating — no avatar or controls") end
-        if app.net.mode == "idle" and UI.displayedLobby then app.net:join(UI.displayedLobby.name,UI.displayedLobby.sid,"spectate",UI.displayedLobby.mode or "coop")
-        elseif app.net.setRole then app.net:setRole("spectate") end
+    UI.join,UI.host,UI.start=UI.primary,UI.primary,UI.primary
+    hover(UI.primary,"Brawl / player-versus-player","Join fight explicitly opts into PvP. Leave fight returns to watching without leaving the room. Starting never captures keyboard input.")
+    UI.solo=button(root,"Solo practice",196,-478,144,function() app.soloGame(); UI.render() end)
+    UI.fight=button(root,"Join fight",196,-478,144,function()
+        if app.net.role=="spectate" then app.joinFight() else app.leaveFight() end
         UI.render()
     end)
-    hover(UI.spectate,"Watch only","No avatar, input or starting. Up to 40 humans total; AI only uses the 25 actor slots. Switch to Play when an active slot opens.")
-    UI.solo = button(root,"Solo practice",340,-76,114,function() app.net:solo(UI.selectedMode); UI.render() end)
-    UI.next = button(root,"Next host",462,-76,94,function()
-        local list, current = app.net:lobbyList(),0
-        for i,l in ipairs(list) do if l.name == UI.lobbyName then current=i end end
-        if #list>0 then UI.lobbyName=list[current%#list+1].name end; UI.render()
-    end)
-    hover(UI.next,"Advanced: choose another host","Lobbies refresh automatically only while this window is open. Joining is always your choice.")
-    local function chooseMode(mode)
-        if app.net.mode=="idle" then UI.selectedMode=mode
-        elseif app.net.setMode and app.net:setMode(mode) then UI.selectedMode=mode end
-        UI.render()
-    end
-    UI.coop=button(root,"CO-OP",564,-76,102,function() chooseMode("coop") end)
-    UI.brawl=button(root,"BRAWL",674,-76,110,function() chooseMode("brawl") end)
-    hover(UI.coop,"Co-op: team up","Default mode. Smash together; punches never hurt your crew. Boss hazards still hurt.")
-    hover(UI.brawl,"Brawl: optional PvP","Punch other monsters for KOs, separate from fame. Choose before Start / replay, with no guests joined. Start a new lobby to change mode with friends. JOIN BRAWL is explicit consent.")
-    UI.leave = button(root,"Leave",792,-76,88,function()
-        if app.input then app.input:release("Left game — keys released") end
-        app.persist(); app.net:leave(); UI.render()
-    end)
-    UI.lobby = text(root,12,21,-116,859)
+    UI.roomHint=text(root,12,360,-483,518)
+    rect(root,20,140,860,1,0.45,0.34,0.32,0.45)
+    UI.lobby=text(root,12,21,-75,859)
     local city = CreateFrame("Frame",nil,root); UI.city=city
-    city:SetSize(632,354); city:SetPoint("BOTTOMLEFT",root,"BOTTOMLEFT",20,174)
+    city:SetSize(632,354); city:SetPoint("BOTTOMLEFT",root,"BOTTOMLEFT",20,202)
     -- Warm dusk bands, long-distance skyline, lamps and a raised two-tone street.
     for i=0,11 do rect(city,0,i*29.5,632,30,0.19+i*0.012,0.13+i*0.006,0.21+i*0.005,1,"BACKGROUND") end
     rect(city,543,244,52,50,0.98,0.63,0.34,0.85,"BACKGROUND")
@@ -291,7 +281,7 @@ function UI.create(app)
         local monster=creature(city,slot); monster.artScale=0.73; monster:SetScale(monster.artScale)
         local n=slot
         hover(monster,function() local m=app.net.members[n]; return m and ((m.bot and "AI: " or "")..m.name) or ("Monster "..n) end,
-            function() local s=app.net.state; local p=s and s.players[n]; return p and ((p.bot and "AI • " or "")..(p.hp or 100).." HP • "..(p.kos or 0).." KOs • "..p.score.." fame • lane "..p.x.." • floor "..p.y) or "Waiting for player" end)
+            function() local s=app.net.state; local p=s and s.players[n]; return p and (profileDetail(p)..(p.hp or 100).." HP • "..(p.kos or 0).." KOs • "..p.score.." fame • lane "..p.x.." • floor "..p.y) or "Waiting for player" end)
         UI.monsters[slot]=monster
     end
     -- Fixed particle frame sits above the city; textures are recycled round-robin.
@@ -318,7 +308,7 @@ function UI.create(app)
     rect(UI.banner,0,64,430,2,1,0.66,0.30); UI.banner.title=text(UI.banner,23,8,-10,414,"CENTER")
     UI.banner.sub=text(UI.banner,11,8,-39,414,"CENTER"); UI.banner:Hide()
     local crew=CreateFrame("Frame",nil,root); UI.crew=crew
-    crew:SetSize(208,354); crew:SetPoint("BOTTOMLEFT",root,"BOTTOMLEFT",672,174)
+    crew:SetSize(208,354); crew:SetPoint("BOTTOMLEFT",root,"BOTTOMLEFT",672,202)
     rect(crew,0,0,208,354,0.14,0.12,0.15,1,"BACKGROUND")
     UI.crewTitle=text(crew,14,12,-12,184); UI.crewSub=text(crew,11,12,-33,184)
     UI.scores={}
@@ -327,55 +317,108 @@ function UI.create(app)
         local chip=button(crew,tostring(slot),10+((slot-1)%5)*38,-59-math.floor((slot-1)/5)*37,34,function() end)
         chip.tint={c[1]*0.30,c[2]*0.30,c[3]*0.30}; chip:paint()
         hover(chip,function() local m=app.net.members[n]; return m and (n..". "..(m.bot and "AI: " or "")..m.name) or ("Slot "..n.." • open") end,
-            function() local s=app.net.state; local p=s and s.players[n]; return p and ((p.bot and "AI • " or "")..(p.hp or 100).." HP • "..(p.kos or 0).." KOs • "..p.score.." fame"..(n==app.net.slot and " • YOU" or "")) or "An active player may join this slot." end)
+            function() local s=app.net.state; local p=s and s.players[n]; return p and (profileDetail(p)..(p.hp or 100).." HP • "..(p.kos or 0).." KOs • "..p.score.." fame"..(n==app.net.slot and " • YOU" or "")) or "An active player may join this slot." end)
         chip.healthBack=rect(chip,2,1,30,3,0.06,0.05,0.08)
         chip.health=rect(chip,2,1,30,3,0.38,0.88,0.45)
         UI.scores[slot]=chip
     end
-    UI.addAI=button(crew,"+ ADD AI",10,-247,92,function() if app.net.addAI then app.net:addAI() end; UI.render() end)
-    UI.removeAI=button(crew,"- AI",110,-247,88,function() if app.net.removeAI then app.net:removeAI() end; UI.render() end)
-    hover(UI.addAI,"Add one AI monster","Host / solo only, maximum 5 AI within the 25 actor slots. AI runs on the host. Pick Brawl + Solo practice for a quick fight.")
-    hover(UI.removeAI,"Remove one AI monster","Host / solo only. Removes one AI per click, never a human.")
-    UI.personal=text(crew,16,12,-286,184); UI.team=text(crew,11,12,-309,184); UI.best=text(crew,10,12,-331,184)
-    UI.capture=button(root,"PLAY • GRAB KEYS",20,-500,188,function()
-        if app.input.focused then app.input:release() else app.input:grab() end; UI.render()
-    end,true)
-    UI.captureStatus=text(root,12,222,-507,655)
-    UI.healthBack=rect(root,370,104,188,12,0.045,0.04,0.06,1,"ARTWORK",0)
-    UI.healthTrail=rect(root,370,104,188,12,1,0.72,0.38,1,"ARTWORK",1); UI.healthTrail:Hide()
-    UI.health=rect(root,370,104,188,12,0.38,0.88,0.45,1,"ARTWORK",2)
-    UI.healthLabel=text(root,11,367,-561,194,"CENTER")
+    rect(crew,10,106,188,1,0.45,0.34,0.32,0.45)
+    UI.personal=text(crew,15,12,-260,184); UI.team=text(crew,11,12,-282,184); UI.best=text(crew,10,12,-339,184)
+    text(root,10,21,-521,218):SetText("INPUT MODE")
+    UI.mouseMode=button(root,"Mouse",20,-539,104,function()
+        app.input:release("Mouse mode — keyboard released"); UI.render()
+    end)
+    UI.keyboardMode=button(root,"Keyboard",126,-539,118,function()
+        if not app.input.focused then app.input:grab() end; UI.render()
+    end)
+    UI.capture=UI.keyboardMode -- compatibility handle; this is a radio, never a toggle.
+    hover(UI.mouseMode,"Mouse controls","Use the five action buttons. WoW keeps normal keyboard input.")
+    hover(UI.keyboardMode,"Keyboard controls","Explicit fighter opt-in. WASD / arrows move; Space punches. Escape, chat, focus loss, panels and combat release capture. Nothing recaptures automatically.")
+    UI.captureStatus=text(root,12,21,-583,858)
+    UI.healthBack=rect(crew,10,39,188,9,0.045,0.04,0.06,1,"ARTWORK",0)
+    UI.healthTrail=rect(crew,10,39,188,9,1,0.72,0.38,1,"ARTWORK",1); UI.healthTrail:Hide()
+    UI.health=rect(crew,10,39,188,9,0.38,0.88,0.45,1,"ARTWORK",2)
+    UI.healthLabel=text(crew,11,7,-320,194,"CENTER")
     UI.controls={}
     local labels,actions={"A/Left","W/Up","Space","S/Down","D/Right"},{"L","U","P","D","R"}
     for i=1,5 do
         local action=actions[i]
-        UI.controls[i]=button(root,labels[i],20+(i-1)*65,-542,59,function() app.input:action(action); UI.render() end)
-        hover(UI.controls[i],"Mouse fallback: "..action,"Keyboard is primary: click PLAY, then hold WASD / arrows or Space. One action at a time, about five per second.")
+        UI.controls[i]=button(root,labels[i],268+(i-1)*68,-539,62,function() app.input:action(action); UI.render() end)
+        hover(UI.controls[i],"Mouse action: "..action,"One action per click. For held movement choose Keyboard. Punches target eligible rivals before the city or boss in Brawl.")
     end
-    UI.audio=button(root,"Local BM: OFF",575,-542,145,function()
+    -- One bounded modal pool; instructions and infrequent controls leave the city clear.
+    UI.panel=CreateFrame("Frame",nil,root); UI.panel:SetSize(UI.WIDTH,UI.HEIGHT)
+    UI.panel:SetPoint("BOTTOMLEFT",root,"BOTTOMLEFT",0,0); UI.panel:SetFrameLevel(root:GetFrameLevel()+80); UI.panel:EnableMouse(true)
+    rect(UI.panel,0,0,900,660,0.035,0.03,0.045,0.82,"BACKGROUND")
+    local card=CreateFrame("Frame",nil,UI.panel); UI.panelCard=card
+    card:SetSize(548,472); card:SetPoint("TOPLEFT",UI.panel,"TOPLEFT",176,-94)
+    rect(card,0,0,548,472,0.13,0.11,0.14,1,"BACKGROUND")
+    rect(card,0,469,548,3,0.98,0.59,0.28)
+    UI.panelTitle=text(card,23,24,-22,430)
+    UI.panelClose=button(card,"X",494,-20,30,function() UI.setPanel(nil) end)
+    UI.infoContent=CreateFrame("Frame",nil,card); UI.infoContent:SetSize(500,375); UI.infoContent:SetPoint("TOPLEFT",card,"TOPLEFT",24,-76)
+    local info=UI.infoContent
+    local function section(title,body,y)
+        text(info,13,0,-y,500):SetText(title)
+        local detail=text(info,13,0,-y-23,500); detail:SetTextColor(0.82,0.80,0.77); detail:SetText(body)
+    end
+    section("WATCH FIRST. JOIN WHEN READY.","Opening Rampage watches a group room: no avatar, no PvP.\nJoin fight opts into Brawl. Leave fight returns to watching.",0)
+    section("SMASH, CLIMB, DODGE.","Mouse buttons or WASD / arrows move; Space punches.\nClimb lanes 2, 4, 6. Flatten towers, then hit the boss on ground.\nMarked lanes warn before impact. Move clear before the hit.",82)
+    section("READ THE HIT, NOT THE SCORE.","YOU HIT = your confirmed hit. TEAM HIT = sampled team loss.\nHP numbers show damage; fame and KOs are separate.\nGuests see sampled positions, not guaranteed exact reach.",182)
+    section("YOUR KEYS. YOUR ROOM.","Keyboard is opt-in. Esc, chat, panels or focus loss release it.\nClose only hides the window. Settings > Leave game exits.\nOldest admitted member succeeds; unsafe recovery stays paused.",282)
+    UI.settingsContent=CreateFrame("Frame",nil,card); local settings=UI.settingsContent
+    settings:SetSize(500,375); settings:SetPoint("TOPLEFT",card,"TOPLEFT",24,-76)
+    text(settings,13,0,0,500):SetText("LOCAL PRESENTATION")
+    UI.audio=button(settings,"Local BM: OFF",0,-28,238,function()
         app.db.useBlasterMaster=not app.db.useBlasterMaster; UI.render()
     end)
     hover(UI.audio,"Use local BlasterMaster (optional)",function()
         return "Default OFF. Uses your installed provider's crit / combatStart / levelUp mappings, including None and volume variants. No audio files bundled. "..(app.sound and app.sound.status or "")
     end)
-    UI.mute=button(root,"Mute",728,-542,152,function() app.db.muted=not app.db.muted; UI.render() end)
-    UI.reducedMotion=button(root,"Reduced motion: OFF",690,-581,190,function()
+    UI.mute=button(settings,"Mute",250,-28,250,function() app.db.muted=not app.db.muted; UI.render() end)
+    text(settings,11,0,-69,500):SetText("Optional installed BlasterMaster audio. No sounds bundled.")
+    UI.reducedMotion=button(settings,"Reduced motion: OFF",0,-102,238,function()
         app.db.reducedMotion=not app.db.reducedMotion
         UI.restoreFeedbackMotion(); UI.clearParticles(); UI.render()
     end)
     hover(UI.reducedMotion,"Reduced motion", "Keeps damage numbers, health trails and target highlights. Disables recoil, bobbing, walking bounce and moving particles immediately. Saved in Rampage settings.")
-    UI.hint=text(root,11,21,-585,660)
-    UI.feedbackStatus=text(root,10,21,-615,858)
-    UI.status=text(root,10,21,-637,858)
+    text(settings,11,0,-144,500):SetText("Keeps HP, damage numbers and highlights; removes moving FX.")
+    text(settings,13,0,-183,500):SetText("ROOM CONTROLS")
+    UI.addAI=button(settings,"+ Add AI",0,-213,118,function() app.net:addAI(); UI.render() end)
+    UI.removeAI=button(settings,"- Remove AI",128,-213,118,function() app.net:removeAI(); UI.render() end)
+    hover(UI.addAI,"Add a mixed-profile AI monster","Automatically mixes smashers, chasers, scrappers and dodgers. Hover a crew slot for its profile. Host / solo only; maximum 5 AI within 25 actors, never a human participant seat.")
+    hover(UI.removeAI,"Remove one AI monster","Host / solo only. Removes one AI, never a human.")
+    UI.settingsRoom=text(settings,11,0,-254,500)
+    UI.leave=button(settings,"Leave game",0,-298,160,function() app.leaveGame(); UI.setPanel(nil); UI.render() end)
+    hover(UI.leave,"Leave this room","Exits membership and stops auto-watching until you reopen Rampage. A departing host transfers to the oldest remaining participant when possible.")
+    text(settings,11,178,-304,322):SetText("Close hides. Leave exits the room.")
+    UI.panel:Hide()
+    UI.feedbackStatus=text(root,11,21,-611,858)
+    UI.status=text(root,10,21,-639,858)
     app.input=addon.Input.create(app,root)
     root:SetScript("OnHide",function()
         app.input:release("Window hidden — keys released")
+        UI.closePanels()
         if app.feedback then app.feedback:observe(false) end
         UI.resetFeedback(); UI.baseline=nil; UI.resetBossVisuals(); UI.clearParticles()
         if GameTooltip then GameTooltip:Hide() end
     end)
-    root:SetScript("OnShow",function() UI.fit(); UI.nextDiscovery=0; UI.baseline=nil; UI.resetFeedback(); UI.resetBossVisuals(); UI.clearParticles(); app.input:shown() end)
+    root:SetScript("OnShow",function() UI.fit(); UI.baseline=nil; UI.resetFeedback(); UI.resetBossVisuals(); UI.clearParticles(); app.input:shown() end)
     UI.fit(); root:Hide(); return root
+end
+function UI.closePanels()
+    UI.panelOpen=nil
+    if UI.panel then UI.panel:Hide() end
+end
+function UI.setPanel(kind)
+    if not UI.root or not UI.root:IsShown() or UI.app.net.combat then return false end
+    if kind~=nil and kind~="info" and kind~="settings" then return false end
+    if kind and UI.app.input then UI.app.input:release("Panel open — keyboard released") end
+    UI.panelOpen=kind
+    show(UI.panel,kind~=nil)
+    show(UI.infoContent,kind=="info"); show(UI.settingsContent,kind=="settings")
+    UI.panelTitle:SetText(kind=="settings" and "SETTINGS" or "HOW TO RAMPAGE")
+    UI.render(); return true
 end
 function UI.burst(x,y,count,style)
     if UI.app.db.reducedMotion then return end
@@ -520,12 +563,30 @@ local function recoil(at,untilTime,now,strength,reduced)
     return -strength*math.sin(math.pi*t)*(1-t),strength*0.25*math.sin(math.pi*t)
 end
 function UI.feedbackEffects(now)
-    for _,entry in ipairs(UI.damageLabels) do
+    for index,entry in ipairs(UI.damageLabels) do
+        entry.renderX,entry.renderY=nil,nil
         local p=entry.slot and UI.app.net.state and UI.app.net.state.players[entry.slot]
         if now<(entry.untilTime or 0) and (not entry.slot or p and (p.ko or 0)==0) then
             local rise=UI.app.db.reducedMotion and 0 or math.min(8,(now-entry.at)*14)
-            place(entry.font,UI.fx,math.max(0,math.min(484,entry.x-74)),entry.y+rise)
-            entry.font:SetAlpha(math.min(1,(entry.untilTime-now)/0.2)); entry.font:Show()
+            local x,y=math.max(0,math.min(484,entry.x-74)),entry.y+rise
+            -- Local loss and boss receipts reserve the first slots. Stack later
+            -- overlapping labels rather than drawing incoming/outgoing text atop
+            -- one another; bounded by twelve labels and the playfield header.
+            for _=1,index do
+                local conflict=false
+                for i=1,index-1 do
+                    local other=UI.damageLabels[i]
+                    if other.renderX and math.abs(x-other.renderX)<148 and math.abs(y-other.renderY)<19 then
+                        y=other.renderY+20; conflict=true; break
+                    end
+                end
+                if not conflict then break end
+            end
+            if y<=260 then
+                entry.renderX,entry.renderY=x,y
+                place(entry.font,UI.fx,x,y)
+                entry.font:SetAlpha(math.min(1,(entry.untilTime-now)/0.2)); entry.font:Show()
+            else entry.font:Hide() end -- omit excess decoration, never cover boss HP
         else entry.untilTime=nil; entry.key=nil; entry.font:Hide() end
     end
 end
@@ -560,12 +621,12 @@ function UI.bossSample(s,net,now)
     local v=UI.bossVisual
     local reset=not v or v.sid~=net.sid or v.host~=net.hostName or v.mode~=net.mode or v.stage~=s.stage
         or v.epoch~=epoch or seq<(v.seq or 0) or (s.time or 0)<(v.clock or 0)
-        or motion.id<(v.id or 0)
+        or motion.id<(v.id or 0) or v.term~=(net.term or 0)
         or (client and seq>(v.seq or 0)+1)
     if reset then
         UI.resetBossVisuals()
         UI.baseline=nil; UI.clearParticles()
-        v={sid=net.sid,host=net.hostName,mode=net.mode,stage=s.stage,epoch=epoch}
+        v={sid=net.sid,host=net.hostName,mode=net.mode,stage=s.stage,epoch=epoch,term=net.term or 0}
         UI.bossVisual=v
     end
     local fresh=reset or v.state~=s or v.seq~=seq
@@ -596,7 +657,7 @@ function UI.bossSample(s,net,now)
     -- the already locked targets, never predict/replay a launch or apply damage.
     local confirmed=client and fresh and not reset and not wasStale and not stale
         and not s.paused and not net.combat and v.id==motion.id and v.phase=="windup"
-        and motion.phase=="recover" and (motion.remaining or 0)>=3
+        and motion.phase=="recover" and (motion.remaining or 0)>=math.max(0,addon.Model.BOSS_RECOVER-2)
     if confirmed then
         v.confirmedUntil=now+0.65; v.confirmedLanes={}
         for i,cue in ipairs(UI.bossCues) do v.confirmedLanes[i]=cue.lane end
@@ -647,7 +708,7 @@ local function bossCues(s,v)
     local aftermath=v and v.confirmed
     local live=v and (phase=="windup" or phase=="attack" or aftermath)
     local stage=s and s.stage or 1
-    local progress=phase=="attack" and math.max(0,math.min(1,1-(motion.remaining or 0)/0.5)) or 0
+    local progress=phase=="attack" and math.max(0,math.min(1,1-(motion.remaining or 0)/addon.Model.BOSS_ATTACK)) or 0
     for cueIndex,cue in ipairs(UI.bossCues) do
         local lane=aftermath and v.confirmedLanes[cueIndex] or cue.lane
         local on=live and lane~=nil
@@ -738,34 +799,42 @@ function UI.render()
     local lobbyFull=lobby and lobby.count-(lobby.bots or 0)+(lobby.spectators or 0)>=40
     local activeFull=lobby and lobby.count>=25 and (lobby.bots or 0)==0
     local canPlay=app.input:canPlay()
-    local gameMode=s and s.mode or UI.selectedMode
+    local gameMode=s and s.mode or lobby and lobby.mode or net.expectedMode or UI.selectedMode
     local bots=net.botCount and net:botCount() or 0
-    if idle then label(UI.primary,lobby and (lobbyFull and "GAME FULL" or (activeFull and "PLAYERS FULL" or (lobby.mode=="brawl" and "JOIN BRAWL" or "JOIN CO-OP"))) or (net.grouped and "HOST LOBBY" or "PLAY SOLO"))
-    elseif spectator then label(UI.primary,s and s.mode=="brawl" and "JOIN BRAWL" or "SWITCH TO PLAY")
-    elseif s and s.phase=="victory" then label(UI.primary,"PLAY AGAIN")
-    elseif s and s.phase=="lobby" then label(UI.primary,"START GAME")
-    else label(UI.primary,app.input.focused and "PLAYING • KEYS LIVE" or "PLAY • GRAB KEYS") end
     local owner=net.mode=="host" or net.mode=="solo"
-    local hasGuests=false
-    if net.mode=="host" then
-        for id,member in pairs(net.participants or {}) do if id~=1 and member then hasGuests=true; break end end
-    end
-    local canSetMode=not net.combat and (idle or owner and not hasGuests and s and (s.phase=="lobby" or s.phase=="victory"))
-    enabled(UI.coop,canSetMode); enabled(UI.brawl,canSetMode)
-    selected(UI.coop,gameMode~="brawl"); selected(UI.brawl,gameMode=="brawl")
-    enabled(UI.addAI,owner and not spectator and not net.combat and bots<5 and count<25)
-    enabled(UI.removeAI,owner and not spectator and not net.combat and bots>0)
-    enabled(UI.primary,not net.combat and (idle and (not lobby or not lobbyFull and not activeFull) or spectator and (count<25 or bots>0) and net.mode~="joining"
-        or not spectator and (canPlay or owner and s and (s.phase=="lobby" or s.phase=="victory"))))
-    label(UI.spectate,idle and lobbyFull and "GAME FULL" or "SPECTATE")
-    enabled(UI.spectate,not net.combat and (idle and lobby~=nil and not lobbyFull or net.mode=="client" and not spectator))
-    enabled(UI.solo,idle and not net.combat); enabled(UI.next,idle and lobby~=nil); enabled(UI.leave,not idle)
-    local lobbyLine=lobby and ("FOUND  "..modeName(lobby.mode).."  •  "..short(lobby.name).."  •  "..lobby.count.."/25 actors ("..(lobby.bots or 0).." AI)  •  "..(lobby.spectators or 0).." watching  •  "..lobby.phase)
-        or (modeName(UI.selectedMode)..(net.grouped and " ready. Find a lobby or host your own. Joining is always opt-in." or " ready. Solo practice, then + ADD AI. Brawl enables PvP; Co-op never does."))
-    if lobbyFull then lobbyLine=lobbyLine.."  •  FULL (40/40)"
-    elseif activeFull then lobbyLine=lobbyLine.."  •  Players full — SPECTATE to watch" end
-    UI.lobby:SetText(idle and lobbyLine or (modeName(gameMode).."  •  "..(spectator and "WATCHING" or string.upper(net.mode)).."  •  "..(net.hostName and short(net.hostName) or "Your pocket city").."  •  "..count.."/25 actors ("..bots.." AI)  •  "..watch.." spectators"))
-    UI.crewTitle:SetText("THE CREW  "..count.." / 25"); UI.crewSub:SetText(bots.." / 5 AI • "..watch.." watching")
+    local startable=owner and s and s.mode=="brawl" and (s.phase=="lobby" or s.phase=="victory")
+    local migrating=net.migrationActive==true or type(net.migration)=="table"
+    local unsafe=net.combat or net.leaving or s and s.paused
+    local brawl=gameMode=="brawl"
+    if idle then label(UI.primary,lobby and (lobbyFull and "Room full" or not brawl and "Legacy room" or activeFull and "Fighters full" or "Join fight") or "Host Brawl")
+    elseif net.mode=="joining" then label(UI.primary,"Connecting...")
+    elseif startable then label(UI.primary,s.phase=="victory" and "Play again" or "Start Brawl")
+    elseif spectator then label(UI.primary,not brawl and "Legacy room" or count>=25 and bots==0 and "Fighters full" or "Join fight")
+    else label(UI.primary,net.mode=="solo" and "End practice" or "Leave fight") end
+    enabled(UI.primary,not unsafe and (idle and (lobby and brawl and not lobbyFull and not activeFull or not lobby and net.grouped)
+        or startable or net.mode~="joining" and not idle and (not spectator or brawl and (count<25 or bots>0))))
+    show(UI.solo,idle); enabled(UI.solo,idle and not net.combat)
+    show(UI.fight,startable and net.mode~="solo"); label(UI.fight,spectator and "Join fight" or "Leave fight")
+    enabled(UI.fight,startable and not unsafe and (not spectator or brawl and (count<25 or bots>0)))
+    enabled(UI.addAI,owner and not unsafe and bots<5 and count<25)
+    enabled(UI.removeAI,owner and not unsafe and bots>0)
+    enabled(UI.leave,not idle and not net.leaving and not net.combat)
+    UI.settingsRoom:SetText((owner and (bots.." / 5 AI • host controls stay yours while watching.") or "Only the host can change AI. Watching never adds an avatar.")
+        .."\nAuto mix: Smasher / Chaser / Scrapper / Dodger. Hover crew for details.")
+    UI.modeLabel:SetText(brawl and "BRAWL  /  PvP" or "LEGACY CO-OP  /  WATCH ONLY")
+    local host=short(net.hostName or lobby and lobby.name or "")
+    if #host>24 then host=string.sub(host,1,21).."..." end
+    local roomState=migrating and "HOST HANDOFF" or s and s.paused and "PAUSED" or net.mode=="joining" and "CONNECTING" or idle and "NO ROOM JOINED" or spectator and "WATCHING" or "FIGHTER"
+    UI.lobby:SetText(idle and (lobby and ("ROOM FOUND  •  "..host.."  •  "..lobby.count.."/25 actors  •  "..(lobby.spectators or 0).." watching"..(lobbyFull and "  •  FULL (40/40)" or ""))
+        or (net.grouped and "GROUP ARCADE  •  Looking for a room while open" or "SOLO ARCADE  •  Join a party or raid to host together"))
+        or (roomState.."  •  "..(net.mode=="solo" and "Solo practice" or "Host: "..host)..(net.mode=="host" and " (you)" or "").."  •  "..count.."/25 actors ("..bots.." AI)  •  "..watch.." watching"))
+    UI.roomHint:SetText(migrating and "Host handoff in progress. The city is paused."
+        or s and s.paused and "The city is paused. No hits or movement."
+        or idle and (lobby and (brawl and "Join fight opts into PvP. Opening only watches." or "Legacy room stays Co-op. No Brawl conversion.") or net.grouped and "Host a Brawl, or practice on your own." or "Practice offline. Add AI in Settings.")
+        or spectator and (startable and "You own this room. Start without joining the fight." or "Watching safely. Join fight explicitly opts into PvP.")
+        or net.mode=="solo" and "Solo practice. Add AI or tune presentation in Settings."
+        or "You are in the fight. Leaving returns to watching.")
+    UI.crewTitle:SetText("CREW  "..count.." / 25"); UI.crewSub:SetText(bots.." / 5 AI • "..watch.." watching")
     for slot=1,25 do
         local member=net.members[slot]; local p=s and s.players[slot]; local chip=UI.scores[slot]
         local isBot=(p and p.bot) or (member and member.bot)
@@ -822,7 +891,7 @@ function UI.render()
         end
     end
     local localP=s and net.slot and s.players[net.slot]
-    UI.personal:SetText(spectator and "SPECTATOR" or (localP and (localP.score.."  YOUR FAME") or "READY TO SMASH?"))
+    UI.personal:SetText(spectator and "WATCHING" or (localP and (localP.score.."  YOUR FAME") or "CITY IS READY"))
     UI.team:SetText(localP and not spectator and ((localP.kos or 0).." KOs • "..(s and addon.Model.total(s) or 0).." team fame") or ((s and addon.Model.total(s) or 0).." team fame"))
     UI.best:SetText("Personal best  "..(app.db.best or 0))
     local showHealth=localP~=nil and not spectator
@@ -908,22 +977,28 @@ function UI.render()
         UI.hazardText:SetText((s.bossMotion.phase=="patrol" and "BOSS PATROLLING • watch its next windup"
             or bossVisual and bossVisual.confirmed and "IMPACT CONFIRMED • boss recovering" or "BOSS RECOVERING • catch it on the ground")..sample)
     elseif hazard then UI.hazardText:SetText("BOSS RECOVERING • next warning in "..math.ceil(hazard.remaining or 0).."s"..sample)
-    else UI.hazardText:SetText(s and s.phase=="lobby" and "Choose Co-op / Brawl, add AI, then START GAME" or "") end
+    else UI.hazardText:SetText(s and s.phase=="lobby" and "Ready when you are • host starts the city" or "") end
     bossCues(s,bossVisual)
     UI.hazardText:SetTextColor(impact and 1 or 0.98,impact and 0.4 or 0.78,impact and 0.3 or 0.45)
     show(UI.banner,s and (s.phase=="victory" or s.phase=="clear" or s.paused))
-    if s and s.paused then UI.banner.title:SetText("RAID FIRST. SMASH LATER."); UI.banner.sub:SetText("Host in combat — everyone is paused")
+    if s and s.paused then UI.banner.title:SetText(migrating and "HOST HANDOFF" or "CITY PAUSED"); UI.banner.sub:SetText(migrating and "Waiting for safe authority • no hits or movement" or "Host unavailable or in combat • no hits or movement")
     elseif s and s.phase=="victory" then UI.banner.title:SetText("TOAST WINS!"); UI.banner.sub:SetText("ZERO MORE BOSSES • "..addon.Model.total(s).." TEAM FAME")
     elseif s and s.phase=="clear" then UI.banner.title:SetText("BOSS FLATTENED!"); UI.banner.sub:SetText((4-s.stage).." more bosses • next city incoming") end
     if previous and s and previous.phase~=s.phase and (s.phase=="clear" or s.phase=="victory") then
         UI.burst(316,185,s.phase=="victory" and 50 or 25,s.phase=="victory" and "victory" or "dust")
     elseif previous and s and previous.stage~=s.stage then UI.burst(316,260,24,"victory") end
     UI.stageText:SetText(s and (modeName(gameMode).." • CITY "..s.stage.." / 4   •   "..string.upper(addon.Model.BOSSES[stage])) or "SMASH THE CITY. MAKE TOAST PROUD.")
-    enabled(UI.capture,canPlay or app.input.focused); selected(UI.capture,app.input.focused)
-    label(UI.capture,app.input.focused and "RELEASE KEYS • ESC" or "PLAY • GRAB KEYS")
-    UI.captureStatus:SetText(spectator and "WATCH ONLY • no avatar, no captured keys" or (localP and (localP.ko or 0)>0 and ("KO • respawn in "..math.ceil(localP.ko).."s • click PLAY when ready") or app.input.reason))
+    enabled(UI.mouseMode,not net.combat); selected(UI.mouseMode,not app.input.focused)
+    enabled(UI.keyboardMode,not UI.panelOpen and not spectator and (canPlay or app.input.focused)); selected(UI.keyboardMode,app.input.focused)
+    label(UI.mouseMode,not app.input.focused and "[o] Mouse" or "[ ] Mouse")
+    label(UI.keyboardMode,app.input.focused and "[o] Keyboard" or "[ ] Keyboard")
+    UI.captureStatus:SetText(spectator and "WATCH ONLY  •  No avatar. No captured keys."
+        or app.input.focused and (s and s.phase=="clear" and "KEYBOARD ON  •  Next city incoming; release held keys before moving." or "KEYBOARD ON  •  WASD / arrows to move, Space to punch. Esc releases.")
+        or localP and (localP.ko or 0)>0 and ("KO  •  Respawn in "..math.ceil(localP.ko).."s. Keyboard stays off.")
+        or localP and "MOUSE MODE  •  Click an action, or select Keyboard to capture keys."
+        or "KEYBOARD OFF  •  Join a fight to enable controls.")
     UI.captureStatus:SetTextColor(app.input.focused and 0.50 or 0.83,app.input.focused and 0.96 or 0.79,app.input.focused and 0.65 or 0.70)
-    for _,b in ipairs(UI.controls) do enabled(b,canPlay) end
+    for _,b in ipairs(UI.controls) do show(b,localP~=nil and not spectator and not app.input.focused); enabled(b,canPlay and not UI.panelOpen) end
     label(UI.audio,app.db.useBlasterMaster and "Local BM: ON" or "Local BM: OFF")
     selected(UI.audio,app.db.useBlasterMaster); selected(UI.mute,app.db.muted)
     label(UI.mute,app.db.muted and "UNMUTE RAMPAGE" or "Mute Rampage")
@@ -932,24 +1007,24 @@ function UI.render()
     UI.feedbackStatus:SetText(now<(UI.feedbackNoticeUntil or 0) and UI.feedbackNotice or
         (gameMode=="brawl" and ((net.mode=="client" and "SAMPLED • " or "").."BRAWL: lowest eligible slot first • same height, within 1 lane"..(guidance and guidance.pvpSlot and (" • target #"..guidance.pvpSlot) or ""))
         or ((net.mode=="client" and "SAMPLED / estimated • " or "")..rangeHelp.." • HP loss, not fame • YOU: exact hit / TEAM: total")))
-    UI.hint:SetText(spectator and "Enjoy the chaos. Switch to Play above when there is space; this never happens automatically."
-        or ("WASD / arrows: walk & climb • Space: punch • Esc: release • dodge marked lanes!\n"..(gameMode=="brawl" and "BRAWL: hit rivals; KOs are not fame. Fast respawn + shield. " or "CO-OP: crew punches are safe. ").."Climb 2, 4, 6; flatten towers, then boss."))
-    UI.status:SetText((net.status or "").."  •  Drag title to move • Close hides; Leave exits")
+    if idle or spectator then UI.feedbackStatus:SetText("HIT RECEIPTS  •  YOU HIT = confirmed local damage  /  TEAM HIT = sampled team damage") end
+    local status=net.status or ""
+    if #status>88 then status=string.sub(status,1,85).."..." end
+    UI.status:SetText(status.."  •  Close hides; Settings > Leave game exits")
     UI.baseline=s and {stage=s.stage,phase=s.phase,sid=net.sid,epoch=s._epoch or net.inputEpoch or 0,seq=net.inSeq or 0,hp={}} or nil
     if s then for i=1,9 do UI.baseline.hp[i]=s.hp[i] end end
     UI.effects(now); UI.feedbackEffects(now)
 end
 function UI.update(elapsed)
     if not UI.root or not UI.root:IsShown() then return end
-    local net,now=UI.app.net,UI.app.now()
-    if net.mode=="idle" and net.grouped and not net.combat and now>=(UI.nextDiscovery or 0) then
-        UI.nextDiscovery=now+4; net:discover()
-    end
+    -- Discovery and user-open watch intent belong to the adapter. Rendering must
+    -- never undo Leave suppression or subscribe from a closed advertisement.
+    if UI.app.net.combat then UI.closePanels() end
 end
 function UI.toggle(app)
     if app.net.combat then app.net:notice("Window unavailable in combat. Raid first!"); return false end
     local root=UI.create(app)
-    if root:IsShown() then root:Hide() else root:Show(); UI.render() end
+    if root:IsShown() then root:Hide() else return app.openWindow() end
     return true
 end
 function UI.combat(active)

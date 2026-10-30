@@ -18,7 +18,7 @@ local function editing()
 end
 function Input.create(app, root)
     local self = { app = app, root = root, held = {}, blocked = {}, serial = 0, focused = false, nextAction = 0,
-        reason = "Click PLAY to capture keys" }
+        reason = "Mouse controls • select Keyboard to use keys" }
     local frame = CreateFrame("Frame", nil, root)
     self.frame = frame
     frame:SetSize(1, 1); frame:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
@@ -26,7 +26,8 @@ function Input.create(app, root)
     function self:canCapture()
         local net, s = app.net, app.net.state
         local p=s and net.slot and s.players[net.slot]
-        return root:IsShown() and not net.combat and not (InCombatLockdown and InCombatLockdown())
+        return root:IsShown() and not addon.UI.panelOpen and not net.leaving and not net.migrationActive
+            and not net.combat and not (InCombatLockdown and InCombatLockdown())
             and net.mode ~= "idle" and net.mode ~= "joining" and net.role ~= "spectate" and net.requestedRole ~= "spectate"
             and p ~= nil and not p.protected and (p.ko or 0)<=0 and (p.hp or 100)>0
             and (s.phase == "play" or s.phase == "clear") and not s.paused
@@ -50,7 +51,7 @@ function Input.create(app, root)
     function self:release(reason)
         self.focused, self.held, self.blocked, self.nextAction = false, {}, {}, 0
         self.phase,self.stage=nil,nil
-        self.reason = reason or "Keys released — click PLAY"
+        self.reason = reason or "Mouse controls • keys released"
         frame:Hide()
         if self.supported and not (InCombatLockdown and InCombatLockdown()) then
             frame:SetPropagateKeyboardInput(true)
@@ -58,7 +59,7 @@ function Input.create(app, root)
     end
     function self:shown()
         -- Reopening clears the stale hidden-window reason, never auto-captures.
-        self:release(app.net.role=="spectate" and "Watching only — no captured keys" or "Click PLAY to capture keys")
+        self:release(app.net.role=="spectate" and "Watching only — no captured keys" or "Mouse controls • select Keyboard to use keys")
     end
     function self:grab()
         if not self.supported then self.reason = "Keyboard unavailable — use mouse controls"; return false end
@@ -87,11 +88,11 @@ function Input.create(app, root)
         -- uses IsKeyDown; reconcile physical state without inventing focus APIs.
         for key in pairs(self.held) do
             if IsKeyDown and not IsKeyDown(key) then
-                self:release("Key state changed — click PLAY"); return
+                self:release("Key state changed — select Keyboard"); return
             end
         end
         -- A long stalled frame must not replay accumulated inputs.
-        if elapsed and elapsed > 0.75 then self:release("Window interrupted — click PLAY"); return end
+        if elapsed and elapsed > 0.75 then self:release("Window interrupted — select Keyboard"); return end
         if not self:canPlay() then return end -- intermission retains routing, never actions
         local selected, order
         for key, n in pairs(self.held) do if not order or n > order then selected, order = key, n end end
@@ -109,7 +110,7 @@ function Input.create(app, root)
             if not keys[key] or (IsAltKeyDown and IsAltKeyDown()) or (IsControlKeyDown and IsControlKeyDown())
                 or (IsMetaKeyDown and IsMetaKeyDown()) then
                 -- Unknown keys, Enter, slash and modifier combinations pass through to WoW.
-                self:release("WoW shortcut — click PLAY to recapture"); return
+                self:release("WoW shortcut — select Keyboard to recapture"); return
             end
             frame:SetPropagateKeyboardInput(false)
             if not self:canPlay() then self.blocked[key]=true; return end

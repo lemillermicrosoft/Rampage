@@ -2,12 +2,32 @@
 local _, addon = ...
 local M = { MAX_PLAYERS = 25, MAX_BOTS = 5, LANES = 7, FLOORS = 3,
     MAX_HP = 100, ACTION_INTERVAL = 0.2, PUNCH_INTERVAL = 0.6,
-    BOT_INTERVAL = 0.35, PATROL_TIME = 5, WARNING_TIME = 7, IMPACT_TIME = 0.5, HAZARD_COOLDOWN = 5 }
+    BOT_INTERVAL = 0.35, PATROL_TIME = 3, WARNING_TIME = 7, IMPACT_TIME = 0.5, HAZARD_COOLDOWN = 3 }
+-- Public phase aliases share the existing model/presentation timing constants.
+M.BOSS_PATROL, M.BOSS_WINDUP = M.PATROL_TIME, M.WARNING_TIME
+M.BOSS_ATTACK, M.BOSS_RECOVER = M.IMPACT_TIME, M.HAZARD_COOLDOWN
 addon.Model = M
 M.BOSSES = { "The Crumb Baron", "Permitron 9000", "The Snack Tax", "Queuezilla" }
 M.BOT_NAMES = { "Pebble Pal", "Noodle Knight", "Mochi Boots", "Waffle Scout", "Bumble Brick" }
 M.ACTIONS = { L = true, R = true, U = true, D = true, P = true }
 M.TOWERS = { 2, 4, 6 }
+-- Profiles are a pure function of immutable botID, not actor slot or local time.
+-- Slot five reuses Smasher with an east-first bias and a different cadence.
+-- BOT_INTERVAL remains the legacy nominal constant; these are actual decisions.
+local botProfiles = {
+    { key = "smasher", label = "Smasher", description = "West-first tower demolition; works from the roof down.", interval = 0.4 },
+    { key = "chaser", label = "Chaser", description = "Clears towers near the boss, then pursues its moving hitbox.", interval = 0.3 },
+    { key = "scrapper", label = "Scrapper", description = "Brief Brawl rival hunts, then objectives; city helper in Co-op.", interval = 0.5 },
+    { key = "dodger", label = "Dodger", description = "Escapes warnings early and works on safe objectives; no damage immunity.", interval = 0.6 },
+    { key = "smasher", label = "Smasher", description = "East-first tower demolition with a steadier cadence.", interval = 0.5 },
+}
+function M.botProfile(botID) return botProfiles[botID] end
+local function nextBotTime(time, botID)
+    local interval, offset = botProfiles[botID].interval, (botID - 1) * 0.1
+    -- Absolute game-clock lattice prevents cadence drift and needs no new
+    -- checkpoint state. Existing nextBot/nextAction/nextPunch remain authoritative.
+    return (math.floor((time - offset) / interval + 0.00001) + 1) * interval + offset
+end
 function M.validMode(mode) return mode == "coop" or mode == "brawl" end
 function M.new(mode)
     return { phase = "lobby", mode = M.validMode(mode) and mode or "coop", time = 0,
@@ -182,45 +202,89 @@ local function threatened(h, lane)
     for _, x in ipairs(h.lanes) do if x == lane then return true end end
     return false
 end
-function M.botAction(s, slot)
-    local p, h = s.players[slot], s.hazard
-    if not p or not p.bot then return nil end
-    if h and ((h.phase == "warning" and h.remaining <= 3) or h.phase == "impact")
-        and (M.bossAttackKind(s) ~= "ground" or p.y == 0) then
-        -- Stay safe until impact finishes rather than immediately walking back
-        -- into a warning while chasing the city/boss. Elevated stomp targets are safe.
-        if not threatened(h, p.x) then return "P" end
-        if p.y > 0 then return "D" end
-        local target, distance
-        for x = 1, 7 do
-            if not threatened(h, x) and (not distance or math.abs(x-p.x) < distance) then target, distance = x, math.abs(x-p.x) end
-        end
-        if target then return target < p.x and "L" or "R" end
-    end
-    -- Brief deterministic scuffles, not permanent spawn-camping: city still advances.
-    if s.mode == "brawl" and math.floor(s.time / 2) % 2 == 0 then
-        for other = 1, M.MAX_PLAYERS do
-            local q = s.players[other]
-            if other ~= slot and q and q.ko == 0 and not q.protected and q.y == p.y and math.abs(q.x-p.x) <= 1 then return "P" end
-        end
-    end
-    local target, floor, distance
+local function objectiveAction(s, p, profile, avoid)
+    local target, floor, priority
+    local ground = M.bossAttackKind(s) == "ground"
     for tower = 1, 3 do
-        for f = 3, 1, -1 do
-            if s.hp[(tower-1)*3+f] > 0 then
-                local d = math.abs(M.TOWERS[tower]-p.x)
-                if not distance or d < distance then target, floor, distance = M.TOWERS[tower], f, d end
-                break
+        local x, chosen = M.TOWERS[tower]
+        -- Smasher/chaser clear roofs first; scrapper/dodger start at street level.
+        for f = 1, 3 do
+            local level = (profile.key == "smasher" or profile.key == "chaser") and 4-f or f
+            if (s.hp[(tower-1)*3+level] or 0) > 0 then chosen = level; break end
+        end
+        local safe = not avoid or not threatened(s.hazard, x) or (ground and p.x == x and p.y > 0)
+        if chosen and safe then
+            local rank = math.abs(x-p.x)
+            if profile.key == "smasher" then
+                rank = (tower - (p.botID == 5 and 3 or 1)) % 3
+            elseif profile.key == "chaser" then
+                -- Finish an occupied tower rather than switching every patrol tick.
+                rank = p.x == x and p.y > 0 and -1 or math.abs(x-M.bossPosition(s)) + math.abs(x-p.x) * 0.1
             end
+            if not priority or rank < priority - 0.00001 then target, floor, priority = x, chosen, rank end
         end
     end
     if target then
         if p.x ~= target then return p.y > 0 and "D" or (p.x < target and "R" or "L") end
+        -- Ground punches already reach floor one; do not climb unnecessarily.
+        if floor == 1 and p.y == 0 then return "P" end
         if p.y < floor then return "U" elseif p.y > floor then return "D" else return "P" end
     end
+    if M.cityAlive(s) then return nil end -- No safe tower until this warning ends.
     if p.y > 0 then return "D" end
     if M.bossInReach(s, p) then return "P" end
     return p.x < M.bossPosition(s) and "R" or "L"
+end
+local function rivalAction(s, slot, p)
+    -- Two seconds out of each ten, phased by immutable identity. No persistent
+    -- target/timer, no pursuit during a warning dodge, and no friendly Co-op hunt.
+    if s.mode ~= "brawl" or (s.time + p.botID * 0.7 + 0.00001) % 10 >= 2 then return nil end
+    local target, distance
+    for other = 1, M.MAX_PLAYERS do
+        local q = s.players[other]
+        if other ~= slot and q and q.ko == 0 and not q.protected and q.invuln == 0
+            and (q.y == 0 or (q.x == p.x and towerIndex(q.x) and M.towerAlive(s, towerIndex(q.x)))) then
+            local d = math.abs(q.x-p.x) + math.abs(q.y-p.y) * 2
+            if not distance or d < distance then target, distance = q, d end
+        end
+    end
+    if not target then return nil end
+    if p.y == target.y and math.abs(p.x-target.x) <= 1 then
+        if not p.nextPunch or s.time + 0.00001 >= p.nextPunch then return "P" end
+        return nil
+    end
+    if p.x ~= target.x then return p.y > 0 and "D" or (p.x < target.x and "R" or "L") end
+    return p.y > target.y and "D" or "U"
+end
+function M.botAction(s, slot)
+    local p, h = s.players[slot], s.hazard
+    if not p or not p.bot or p.protected or p.ko > 0 or s.phase ~= "play" or s.paused then return nil end
+    local profile = M.botProfile(p.botID)
+    if not profile then return nil end
+    local ground = M.bossAttackKind(s) == "ground"
+    -- Match action-clock tolerance at boundaries; 0.05/0.1s partitions must not
+    -- choose different targets because a warning is 5.50000000000001 seconds.
+    local avoid = h and ((h.phase == "warning" and h.remaining <= (profile.key == "dodger" and 5.5 or 3) + 0.00001) or h.phase == "impact")
+    if avoid and threatened(h, p.x) and (not ground or p.y == 0) then
+        if p.y > 0 then return "D" end
+        local target, distance
+        -- Identity-biased equal-distance escapes, not randomized jitter.
+        for i = 1, 7 do
+            local x = p.botID % 2 == 0 and 8-i or i
+            if not threatened(h, x) and (not distance or math.abs(x-p.x) < distance) then target, distance = x, math.abs(x-p.x) end
+        end
+        if target then return target < p.x and "L" or "R" end
+    end
+    local action = not avoid and profile.key == "scrapper" and rivalAction(s, slot, p) or nil
+    action = action or objectiveAction(s, p, profile, avoid)
+    if avoid then
+        -- Keep working safely rather than idle-punching or walking straight back
+        -- into a warning. Elevated stomp targets may work, but not descend into it.
+        local x = p.x + (action == "L" and -1 or (action == "R" and 1 or 0))
+        local y = action == "D" and math.max(0, p.y-1) or p.y
+        if threatened(h, x) and (not ground or y == 0) then return nil end
+    end
+    return action
 end
 local function moveBoss(s, dt)
     if not s.bossMotion then patrol(s, 4) end
@@ -267,9 +331,12 @@ local function step(s, dt)
     moveBoss(s, dt)
     for slot = 1, M.MAX_PLAYERS do
         local p = s.players[slot]
-        if p and p.bot and (not p.nextBot or s.time + 0.00001 >= p.nextBot) then
-            p.nextBot = s.time + M.BOT_INTERVAL
-            M.act(s, slot, M.botAction(s, slot))
+        if p and p.bot and M.botProfile(p.botID) then
+            if not p.nextBot then p.nextBot = nextBotTime(s.time-dt, p.botID) end
+            if s.time + 0.00001 >= p.nextBot then
+                p.nextBot = nextBotTime(s.time, p.botID)
+                M.act(s, slot, M.botAction(s, slot))
+            end
         end
     end
 end

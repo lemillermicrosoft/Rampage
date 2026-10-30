@@ -5,7 +5,8 @@ local Feedback = { MAX_EVENTS = 32, MAX_TEAM_EVENTS = 8, MAX_AGE = 2.5 }
 addon.Feedback = Feedback
 local function localAuthority(net) return net.mode == "solo" or net.mode == "host" end
 local function active(net, s)
-    return s and not net.combat and not s.paused and net.mode ~= "idle" and net.mode ~= "joining"
+    return s and not net.combat and not s.paused and not net.leaving and not net.migrationActive
+        and net.mode ~= "idle" and net.mode ~= "joining"
         and (s.phase == "play" or s.phase == "clear" or s.phase == "victory")
 end
 -- Member records and snapshots arrive independently. Never attach a stale name to
@@ -40,14 +41,14 @@ local function capture(net, s, now)
     local own = net.slot and p[net.slot]
     return { players = p, hp = hp, boss = s.boss, bossX = M.bossPosition(s), stage = s.stage, phase = s.phase,
         time = s.time or 0, at = now, sampleAt = net.lastSnapshot, seq = net.inSeq or 0,
-        epoch = s._epoch or net.inputEpoch, mode = net.mode, gameMode = s.mode, sid = net.sid,
+        epoch = s._epoch or net.inputEpoch, term = net.term or 0, mode = net.mode, gameMode = s.mode, sid = net.sid,
         host = net.hostName or net.name, role = net.role, requestedRole = net.requestedRole,
         roleSeq = net.acceptedRoleSeq or net.roleSeq, slot = net.slot, memberGeneration = net.generation,
         ownID = own and own.id, ownKO = own and own.ko > 0 or false }
 end
 local function lifecycle(a, b)
     return a.mode ~= b.mode or a.gameMode ~= b.gameMode or a.sid ~= b.sid or a.host ~= b.host
-        or a.epoch ~= b.epoch or a.stage ~= b.stage or a.role ~= b.role or a.requestedRole ~= b.requestedRole
+        or a.epoch ~= b.epoch or a.term ~= b.term or a.stage ~= b.stage or a.role ~= b.role or a.requestedRole ~= b.requestedRole
         or a.roleSeq ~= b.roleSeq or a.slot ~= b.slot or a.memberGeneration ~= b.memberGeneration
         or a.ownID ~= b.ownID or b.time < a.time
 end
@@ -146,7 +147,8 @@ function Feedback.create(app)
         -- A reordered sample is never allowed to roll back clocks/epochs or
         -- actor identity. Real role/session changes still take precedence.
         local sameSession = before.mode == after.mode and before.sid == after.sid and before.host == after.host
-            and before.memberGeneration == after.memberGeneration and before.role == after.role and before.slot == after.slot
+            and before.term == after.term and before.memberGeneration == after.memberGeneration
+            and before.role == after.role and before.slot == after.slot
         if remote and sameSession and after.seq < before.seq then return end
         if lifecycle(before, after) then self:reset(); self.baseline = after; return end
         -- Check the PREVIOUS arrival timestamp before replacing it. Repeated

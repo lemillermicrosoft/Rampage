@@ -36,6 +36,20 @@ local function member(net, s, slot, name)
     net:rebuildMembers()
     if s._mapping then s._mapping[slot] = slot; net.memberVersions[slot] = s._revision end
 end
+check("feedback: host term and migration pause rebaseline without rollback damage", function()
+    local _,net,s,f,advance=fixture("client")
+    advance(0.5,true); s.players[2].hp=80; f:observe(true)
+    eq(#kind(f:drain(),"hurt"),1)
+    net.migrationActive=true; f:observe(true); eq(#f:drain(),0)
+    s.players[2].hp=70; net.migrationActive=false; net.term=(net.term or 0)+1
+    advance(0.5,true); f:observe(true); eq(#f:drain(),0)
+    local generation=f.generation
+    net.term=net.term+1; s.players[2].hp=65; advance(0.5,true)
+    f:observe(true); eq(#f:drain(),0); assert(f.generation>generation)
+    advance(0.5,true); s.players[2].hp=60; f:observe(true)
+    eq(kind(f:drain(),"hurt")[1].amount,5)
+    net.leaving=true; f:observe(true); eq(#f:drain(),0)
+end)
 check("feedback: baseline and score/hit counters never manufacture contact", function()
     local _, _, s, f = fixture()
     eq(#f:drain(), 0)

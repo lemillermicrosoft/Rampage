@@ -1,8 +1,8 @@
 local N, M = Addon.Protocol, Addon.Model
 local function input(c, seq, action, options)
     local o = options or {}
-    return table.concat({"R4", "I", o.sid or c.sid, o.token or c.joinToken, o.generation or c.generation,
-        seq, o.seen or c.inSeq, o.epoch or c.state._epoch, o.roleSeq or c.acceptedRoleSeq, action}, "|")
+    return table.concat({"R5", "I", o.sid or c.sid, o.token or c.joinToken, o.generation or c.generation,
+        seq, o.seen or c.inSeq, o.epoch or c.state._epoch, o.roleSeq or c.acceptedRoleSeq, action, o.term or c.term}, "|")
 end
 local function simulation(count, longNames)
     local sim = { time = 0, nodes = {}, pending = {}, sent = {}, roster = {}, serial = 0, maxQueue = 0, maxLag = 0 }
@@ -34,13 +34,17 @@ local function simulation(count, longNames)
             if drive then drive(self) end
             for _, node in ipairs(self.nodes) do
                 if node.active then
-                    local before = node.net.inSeq; node.net:tick(0.1)
+                    local before, term = node.net.inSeq, node.net.term; node.net:tick(0.1)
                     self.maxQueue = math.max(self.maxQueue, #node.net.queueOrder)
                     assert(#node.net.queueOrder <= N.MAX_QUEUE)
                     if node.net.mode == "client" and node.net.lastSnapshot then self.maxLag = math.max(self.maxLag, self.time - node.net.lastSnapshot) end
                     local assemblies = 0; for _ in pairs(node.net.assemblies) do assemblies = assemblies + 1 end
                     assert(assemblies <= N.MAX_ASSEMBLIES)
-                    if node.net.mode == "client" then assert(node.net.inSeq >= before) end
+                    if node.net.mode == "client" and node.net.term==term then assert(node.net.inSeq >= before) end
+                    local recovery=0; for _ in pairs(node.net.checkpointAssemblies or {}) do recovery=recovery+1 end; assert(recovery<=2)
+                    for field,cap in pairs({configAcks=80,withdrawn=40,incarnations=40}) do
+                        local count=0; for _ in pairs(node.net[field] or {}) do count=count+1 end; assert(count<=cap,field.." unbounded")
+                    end
                 end
             end
             local pending = self.pending; self.pending = {}
@@ -49,10 +53,10 @@ local function simulation(count, longNames)
                 else
                     for index, node in ipairs(self.nodes) do
                         if node.active and node.name ~= p.sender and not (self.drop and self.drop(p, node, index)) then
-                            local before = node.net.inSeq
+                            local before, term = node.net.inSeq, node.net.term
                             node.net:receive(p.sender, p.payload)
                             if self.duplicates and (p.serial + index) % 29 == 0 then node.net:receive(p.sender, p.payload) end
-                            if node.net.mode == "client" then assert(node.net.inSeq >= before, "snapshot regressed") end
+                            if node.net.mode == "client" and node.net.term==term then assert(node.net.inSeq >= before, "snapshot regressed within term") end
                         end
                     end
                 end
@@ -62,6 +66,11 @@ local function simulation(count, longNames)
     function sim:wait(predicate, timeout)
         local deadline = self.time + (timeout or 15)
         while not predicate() and self.time < deadline do self:step(0.1) end
+        if not predicate() then
+            local h=self.nodes[1].net
+            print("  Timeout diagnostics",h.mode,h.revision,h.configRevision,h.membershipPending,h.leasePaused,#h.queueOrder)
+            for i,n in ipairs(self.nodes) do if n.net.mode~="client" then print("  node",i,n.net.mode,n.net.status,n.net.generation,n.net.electionFloor) end end
+        end
         assert(predicate(), "condition timed out at " .. self.time)
     end
     function sim:connect(index, role)
@@ -90,7 +99,7 @@ local function worldSame(a, b)
         local p, q = a.bossMotion, b.bossMotion
         eq(q.id,p.id); eq(q.phase,p.phase); eq(q.fromLane,p.fromLane); eq(q.toLane,p.toLane)
         eq(q.remaining,math.ceil(p.remaining*10-0.00001)/10); eq(table.concat(q.lanes,","),table.concat(p.lanes,","))
-        assert(math.abs(M.bossPosition(a)-M.bossPosition(b)) <= 0.040001)
+        assert(math.abs(M.bossPosition(a)-M.bossPosition(b)) <= 0.067001)
     end
     eq(a.hazard ~= nil,b.hazard ~= nil)
     if a.hazard then
@@ -108,21 +117,21 @@ local function worldSame(a, b)
         end
     end
 end
-check("protocol: R4 opt-in discovery and unchanged public interface", function()
+check("protocol: R5 opt-in discovery and unchanged public interface", function()
     local sim = simulation(2); local h, c = sim.nodes[1].net, sim.nodes[2].net
-    eq(N.VERSION, "R4"); eq(c.mode, "idle"); eq(#c:lobbyList(), 1); assert(not c.state)
+    eq(N.VERSION, "R5"); eq(c.mode, "idle"); eq(#c:lobbyList(), 1); assert(not c.state)
     eq(c:lobbyList()[1].spectators, 0)
-    for _, old in ipairs({"R1", "R2", "R3"}) do assert(not c:receive(h.name, old.."|Q")); assert(not h:receive(c.name, old.."|Q")) end
+    for _, old in ipairs({"R1", "R2", "R3", "R4"}) do assert(not c:receive(h.name, old.."|Q")); assert(not h:receive(c.name, old.."|Q")) end
     assert(not c:join("Outsider-Realm", h.sid))
     sim:connect(2); eq(h:count(), 2); eq(c.role, "play"); eq(c.members[c.slot].name, c.name)
-    assert(not c:start()); assert(not h:setRole("spectate")); eq(h.slot, 1)
+    assert(not c:start()); assert(h:setRole("spectate")); assert(not h.slot); eq(h.role,"spectate")
 end)
 check("protocol: actual roster sender, host, session and generated admission identity are mandatory", function()
     local sim = simulation(3); local c = sim:connect(2); local h, other = sim.nodes[1].net, sim.nodes[3].net
     h:start(); sim:step(2)
     local before = c.inSeq; local fake = N.encodeState(h.state, h.sid, before + 50)
     assert(not c:receive(other.name, fake[1])); assert(not c:receive("Stranger-Realm", fake[1])); eq(c.inSeq, before)
-    assert(not h:receive("Stranger-Realm", "R4|J|" .. h.sid .. "|x|p|c"))
+    assert(not h:receive("Stranger-Realm", "R5|J|" .. h.sid .. "|x|p|c"))
     for _, o in ipairs({{sid="WRONG"}, {token="WRONG"}, {generation=999999}, {epoch=999999}, {roleSeq=99}}) do
         assert(not h:receive(c.name, input(c, 500, "R", o)))
     end
@@ -135,9 +144,9 @@ check("protocol: host challenge prevents replayed old joins and confirmations re
     c:leave(); sim:step(1); eq(h:count(), 1); sim:connect(2)
     assert(c.joinToken ~= oldToken and c.generation > oldGen)
     local currentGen = c.generation
-    assert(h:receive(c.name, "R4|J|" .. h.sid .. "|" .. oldToken .. "|p|c"))
-    assert(not h:receive(c.name, "R4|B|" .. h.sid .. "|" .. oldToken .. "|" .. oldGen))
-    assert(not h:receive(c.name, "R4|L|" .. h.sid .. "|" .. oldToken .. "|" .. oldGen))
+    assert(h:receive(c.name, "R5|J|" .. h.sid .. "|" .. oldToken .. "|p|c|1"))
+    assert(not h:receive(c.name, "R5|B|" .. h.sid .. "|" .. oldToken .. "|" .. oldGen .. "|1"))
+    assert(not h:receive(c.name, "R5|L|" .. h.sid .. "|" .. oldToken .. "|" .. oldGen .. "|1|1"))
     eq(h.members[c.slot].generation, currentGen)
 end)
 check("protocol: duplicate, out-of-order, too-fast, previous stage/replay and future inputs rejected", function()
@@ -172,11 +181,11 @@ check("protocol: malformed bounded snapshots never partially replace a world", f
     local sim = simulation(2); local c = sim:connect(2); local h = sim.nodes[1].net
     local valid = N.encodeState(h.state, h.sid, 999)[1]
     local oldState, seq = c.state, c.inSeq
-    local bad = { "R4|S|" .. h.sid .. "|999|3|2|x", "R4|S|" .. h.sid .. "|999|1|9|x", "R4|S|" .. h.sid .. "|1e2|1|1|x",
-        "R4|S|" .. h.sid .. "|999|1|1|bad", valid .. "|extra", string.rep("x", 256) }
+    local bad = { "R5|S|" .. h.sid .. "|999|3|2|x|1", "R5|S|" .. h.sid .. "|999|1|9|x|1", "R5|S|" .. h.sid .. "|1e2|1|1|x|1",
+        "R5|S|" .. h.sid .. "|999|1|1|bad|1", valid .. "|extra", string.rep("x", 256) }
     for _, text in ipairs(bad) do assert(not c:receive(h.name, text)) end
     local chunks = N.encodeState(h.state, h.sid, 999)
-    local parts = {}; for i, chunk in ipairs(chunks) do parts[i] = string.match(chunk, "^R4|S|[^|]+|[^|]+|[^|]+|[^|]+|(.+)$") end
+    local parts = {}; for i, chunk in ipairs(chunks) do parts[i] = string.match(chunk, "^R5|S|[^|]+|[^|]+|[^|]+|[^|]+|(.+)|[^|]+$") end
     local body = table.concat(parts)
     assert(N.decodeState(body))
     for _, b in ipairs({body:gsub("^l,1,10,0", "p,5,10,0"), body:gsub("^l,1,10,0", "p,1,99,0"), body:gsub("^l,1,10,0", "p,1,10,2"), body:gsub("000000000", "000090000", 1)}) do
@@ -201,40 +210,41 @@ check("protocol: spectator late join has world but no avatar, score, action or s
     assert(c:setRole("spectate")); sim:wait(function() return c.role == "spectate" end); sim:step(2)
     assert(not h.state.players[slot]); assert(not c.state.players[slot]); assert(not h:receive(c.name, old))
     assert(c:setRole("play")); sim:wait(function() return c.role == "play" end); sim:step(2)
-    assert(not h:receive(c.name, old)); assert(not h:receive(c.name, "R4|R|" .. h.sid .. "|" .. c.joinToken .. "|" .. c.generation .. "|1|s"))
+    assert(not h:receive(c.name, old)); assert(not h:receive(c.name, "R5|R|" .. h.sid .. "|" .. c.joinToken .. "|" .. c.generation .. "|1|s|1"))
     eq(c.role, "play")
 end)
 check("protocol: cooperative damage, dropped snapshot healing and paused shared host", function()
     local sim = simulation(2); local c = sim:connect(2); local h = sim.nodes[1].net
-    h:start(); h.state.players[1].invuln, h.state.players[c.slot].invuln = 30, 30
+    h:start(); h.state.players[1].invuln, h.state.players[c.slot].invuln = 3, 3
     sim:step(2); sim:act(1, "R"); sim:act(2, "R"); sim:act(1, "P"); sim:act(2, "P")
     eq(h.state.hp[1], 0); eq(c.state.hp[1], 0); eq(c.state.players[1].score, 10); eq(c.state.players[c.slot].score, 10)
     c:setCombat(true); assert(not c:action("R")); c:setCombat(false)
     local old = input(c, 100, "R"); h:setCombat(true); sim:step(2); assert(c.state.paused); assert(not c:action("R"))
     sim:step(36); eq(h:count(), 2); eq(c.mode, "client")
     h:setCombat(false); sim:step(2); assert(not h:receive(c.name, old)); assert(not c.state.paused)
-    sim.drop = function(p) return string.sub(p.payload, 1, 4) == "R4|S" end
-    assert(h:action("R")); sim:step(3); eq(c.state.players[1].x, 2)
-    sim.drop = nil; sim:step(2); eq(c.state.players[1].x, 3)
+    sim.drop = function(p) return string.sub(p.payload, 1, 4) == "R5|S" end
+    local beforeMove=c.state.players[1].x
+    assert(h:action("R")); sim:step(3); eq(c.state.players[1].x, beforeMove)
+    sim.drop = nil; sim:step(2); eq(c.state.players[1].x, h.state.players[1].x)
 end)
-check("protocol: departures, host loss, stalled snapshots and silent spectator expire without migration", function()
+check("protocol: departures, host loss and stalled snapshots pause for evidence; silent spectators expire", function()
     local sim = simulation(3); local c = sim:connect(2); sim:connect(3, "spectate"); local h = sim.nodes[1].net
     sim.nodes[3].active = false; sim:step(36); eq(h:spectatorCount(), 0)
-    c:setRoster({[c.name]=true}, true); eq(c.mode, "idle"); assert(string.find(c.status, "Host left", 1, true))
+    c:setRoster({[c.name]=true}, true); eq(c.mode, "client"); assert(c.migration and c.state.paused)
     h:setRoster({[h.name]=true}, false); eq(h.mode, "idle")
     sim = simulation(2); c = sim:connect(2)
-    sim.drop = function(p) return string.sub(p.payload, 1, 4) == "R4|S" end
-    sim:step(21); eq(c.mode, "idle"); assert(string.find(c.status, "timed out", 1, true))
+    sim.drop = function(p) return string.sub(p.payload, 1, 4) == "R5|S" end
+    sim:step(21); eq(c.mode, "client"); assert(c.migration and c.state.paused)
     sim = simulation(2); c = sim:connect(2); h = sim.nodes[1].net
-    local sid = h.sid; h:leave(); sim:step(1); eq(c.mode, "idle"); assert(h:host()); assert(h.sid ~= sid)
-    assert(not h:receive(c.name, "R4|J|" .. sid .. "|old|p|c"))
+    local sid = h.sid; h:leave(); assert(h.leaving); sim:step(12); eq(c.mode, "host"); eq(h.mode,"idle"); assert(h:host()); assert(h.sid ~= sid)
+    assert(not h:receive(c.name, "R5|J|" .. sid .. "|old|p|c"))
 end)
 check("protocol: world presence removes an expired guest even when its removal record is lost", function()
-    local sim = simulation(2); local c = sim:connect(2); local h = sim.nodes[1].net
+    local sim = simulation(3); local c = sim:connect(2); sim:connect(3); local h = sim.nodes[1].net
     sim.drop = function(p)
-        return p.sender == c.name or string.sub(p.payload, 1, 4) == "R4|M"
+        return p.sender == c.name or string.sub(p.payload, 1, 4) == "R5|M"
     end
-    sim:step(38); eq(h:count(),1); eq(c.mode,"idle")
+    sim:step(38); eq(h:count(),2); eq(c.mode,"idle")
     assert(string.find(c.status,"Removed",1,true))
 end)
 check("protocol: counter saturation never wraps to replayable generations or sequences", function()
@@ -242,11 +252,11 @@ check("protocol: counter saturation never wraps to replayable generations or seq
     h:start(); sim:step(2); c.outSeq = 999999; assert(not c:action("R"))
     c.roleSeq = 999999; assert(not c:setRole("spectate"))
     h.snapshotSeq = 999999; h:snapshot(); eq(h.mode,"idle")
-    sim:step(1); eq(c.mode,"idle")
+    sim:step(21); assert(c.migration and c.state.paused)
 end)
 check("protocol: lost admission record heals with retries without duplicate membership", function()
     local sim = simulation(2); local h, c = sim.nodes[1].net, sim.nodes[2].net
-    sim.drop = function(p) return string.sub(p.payload, 1, 4) == "R4|M" end
+    sim.drop = function(p) return string.sub(p.payload, 1, 4) == "R5|M" end
     assert(c:join(h.name, h.sid)); sim:step(5); eq(c.mode, "joining"); eq(h:count(), 2)
     sim.drop = nil; sim:wait(function() return c.mode == "client" end); eq(h:count(), 2)
 end)
@@ -256,7 +266,7 @@ check("protocol: finite byte/message buckets, coalesced input, bounded queues an
     eq(#h.queueOrder, N.MAX_QUEUE); assert(not h:enqueue("oversize", string.rep("x", 256)))
     sim:step(4)
     local accepted = 0
-    for _ = 1, 1000 do if c:receive(h.name, "R4|Q") then accepted = accepted + 1 end end
+    for _ = 1, 1000 do if c:receive(h.name, "R5|Q") then accepted = accepted + 1 end end
     assert(accepted <= 24)
     local s = M.new(); for i = 1, 25 do M.addPlayer(s, i) end; M.start(s)
     s.stage, s.boss, s.time, s.paused = 4, 16, 6046617.5, true
@@ -266,23 +276,23 @@ check("protocol: finite byte/message buckets, coalesced input, bounded queues an
     for i = 1, 25 do
         local p=s.players[i]; p.x,p.y,p.score,p.hit,p.hp,p.invuln,p.kos,p.protected=6,3,99999,999,100,3,1295,true
     end
-    local chunks = N.encodeState(s, string.rep("a",16), 999999, 999999, 999999, members)
+    local chunks = N.encodeState(s, string.rep("a",16), 999999, 999999, 999999, members, 999999)
     local bytes, body, largest = 0, {}, 0
     for i, p in ipairs(chunks) do assert(#p <= 255); bytes = bytes + #p; largest=math.max(largest,#p)
-        body[i]=string.match(p,"^R4|S|[^|]+|[^|]+|[^|]+|[^|]+|(.+)$"); assert(#body[i]<=176) end
+        body[i]=string.match(p,"^R5|S|[^|]+|[^|]+|[^|]+|[^|]+|(.+)|[^|]+$"); assert(#body[i]<=176) end
     eq(#chunks,3); eq(#table.concat(body),494); assert(N.decodeState(table.concat(body)))
-    eq(bytes,593); eq(bytes+#chunks*N.WIRE_OVERHEAD,641); eq(largest,209)
-    print(string.format("  Maximum actual R4 world: %d body bytes; %d chunks; %d payload / %d charged bytes; largest packet %d/255", #table.concat(body),#chunks,bytes,bytes+#chunks*N.WIRE_OVERHEAD,largest))
+    eq(bytes,614); eq(bytes+#chunks*N.WIRE_OVERHEAD,662); eq(largest,216)
+    print(string.format("  Maximum actual R5 world: %d body bytes; %d chunks; %d payload / %d charged bytes; largest packet %d/255", #table.concat(body),#chunks,bytes,bytes+#chunks*N.WIRE_OVERHEAD,largest))
 end)
 check("protocol: invalid member records, fuzz and bounded expiring advertisements", function()
     local sim = simulation(10); local c = sim:connect(2); local h = sim.nodes[1].net
-    assert(not c:receive(h.name, "R4|M|" .. h.sid .. "|999|3|Fake-Realm|x|2|3|0|c"))
-    assert(not c:receive(h.name, "R4|M|" .. h.sid .. "|999|41|" .. c.name .. "|x|2|3|0|c"))
-    local samples = {"", "R4", "R4|", "R4|I", "R4|M||||||||", "R4|A|x|p|999|0", "R4|S|x|nan", "R1|Q", "R4|J|!|x|p"}
+    assert(not c:receive(h.name, "R5|M|" .. h.sid .. "|999|3|Fake-Realm|x|2|3|0|c|3|1"))
+    assert(not c:receive(h.name, "R5|M|" .. h.sid .. "|999|41|" .. c.name .. "|x|2|3|0|c|3|1"))
+    local samples = {"", "R5", "R5|", "R5|I", "R5|M||||||||", "R5|A|x|p|999|0", "R5|S|x|nan", "R1|Q", "R5|J|!|x|p"}
     for _, sample in ipairs(samples) do h:receive(c.name, sample); c:receive(h.name, sample) end
-    for i = 1, 100 do sim:step(0.1); h:receive(c.name, "R4|" .. string.rep(string.char(32+i%90), i%240)) end
+    for i = 1, 100 do sim:step(0.1); h:receive(c.name, "R5|" .. string.rep(string.char(32+i%90), i%240)) end
     eq(h:count(), 2); eq(c.mode, "client")
-    for i = 2, 10 do assert(h:receive(sim.nodes[i].name, "R4|A|lobby|l|1|0|c|0") == (i <= 9)) end
+    for i = 2, 10 do assert(h:receive(sim.nodes[i].name, "R5|A|lobby|l|1|0|c|0|1") == (i <= 9)) end
     eq(#h:lobbyList(), 8); sim:step(16); eq(#h:lobbyList(), 0)
 end)
 check("protocol: forty 96-byte-name members join in-progress, role fallback and simultaneous rejoin", function()
@@ -326,7 +336,7 @@ check("protocol: forty 96-byte-name members join in-progress, role fallback and 
         local c = sim.nodes[i].net; assert(c.generation > old[i]); eq(c.mode, "client"); worldSame(h.state,c.state)
     end
     eq(h:count(), 25); eq(h:spectatorCount(), 15)
-    assert(sim.nodes[1].wire/sim.time <= N.BYTE_RATE); assert(sim.nodes[1].packets/sim.time <= N.SEND_RATE)
+    assert(sim.nodes[1].wire <= N.BYTE_RATE*sim.time+N.BYTE_BURST); assert(sim.nodes[1].packets <= N.SEND_RATE*sim.time+N.SEND_BURST)
     print(string.format("  40 maximum-name members: admission %.1fs; host %.2f msg/s, %.1f payload B/s (%.1f charged B/s); max queue %d, snapshot gap %.1fs", joinTime,
         sim.nodes[1].packets/sim.time,sim.nodes[1].bytes/sim.time,sim.nodes[1].wire/sim.time,sim.maxQueue,sim.maxLag))
 end)
@@ -339,6 +349,11 @@ check("protocol: sustained real 40-node broadcasts, 25 actors including five AI,
     end, 60)
     sim:step(22)
     eq(h:botCount(),5); eq(h:count(), 25); eq(h:spectatorCount(), 20)
+    -- Distinct AI can finish while forty nodes are still settling admission.
+    -- Start a real replay so the sustained loss fixture observes all four bosses
+    -- with the full population, not a victory that occurred before this phase.
+    sim:wait(function() return h.state.phase=="victory" end,240)
+    assert(h:start()); sim:step(2)
     sim.jitter, sim.duplicates = true, true
     sim.drop = function(p, _, index) return (p.serial * 7 + index * 11) % 23 == 0 end -- 4.35% per-recipient loss
     local startTime, startPackets, startBytes = sim.time, sim.nodes[1].packets, sim.nodes[1].bytes
@@ -376,6 +391,10 @@ check("protocol: sustained real 40-node broadcasts, 25 actors including five AI,
         end
         sim:step(0.1, drive); maxStage = math.max(maxStage, h.state.stage)
     end
+    if maxStage~=4 then
+        print("  Gameplay diagnostics",h.mode,h.state.phase,h.state.time,h.state.paused,h.leasePaused,h.membershipPending,h.revision,h.configRevision,h.inputEpoch,h.status)
+        for id,m in pairs(h.participants) do if id~=h.ownMemberID then local a=h.configAcks[m.name]; print("  member",id,m.generation,m.seen,m.leaseUntil,a and a.revision) end end
+    end
     eq(maxStage, 4); eq(h.state.phase,"victory"); assert(pauseDone)
     -- Keep all 40 connected and drive high-frequency harmless punches/movement
     -- after replay, then settle with zero loss for exact full-world convergence.
@@ -395,11 +414,11 @@ check("protocol: sustained real 40-node broadcasts, 25 actors including five AI,
     for _, p in ipairs(sim.sent) do
         if p.time >= startTime then
             allPackets, allBytes = allPackets+1,allBytes+#p.payload
-            if string.sub(p.payload,1,4) == "R4|K" then heartbeats=heartbeats+1 end
+            if string.sub(p.payload,1,4) == "R5|K" then heartbeats=heartbeats+1 end
         end
     end
     assert(heartbeats >= 39*math.floor(seconds/8-2), "spectator/player keepalives missing")
-    assert((sim.nodes[1].wire-startWire)/seconds <= N.BYTE_RATE)
+    assert(sim.nodes[1].wire-startWire <= N.BYTE_RATE*seconds+N.BYTE_BURST)
     assert((sim.nodes[1].packets-startPackets)/seconds <= N.SEND_RATE)
     assert(sim.maxLag < 20, "snapshot starvation under join/input traffic")
     print(string.format("  Sustained %.1fs: host %.2f msg/s, %.1f payload B/s, %.1f charged B/s; group %.2f msg/s, %.1f payload B/s; %d heartbeats; max queue %d; snapshot gap %.1fs", seconds,
@@ -460,8 +479,8 @@ check("protocol: combat notify and roster fallback protect actual guests, reject
     c:setCombat(true); sim:step(0.3); assert(p.protected); assert(not M.damage(h.state,c.slot,35))
     local before=p.hp; sim:step(9); eq(p.hp,before)
     local seq=c.protectionSeq
-    assert(not h:receive(c.name,table.concat({"R4","K",h.sid,c.joinToken,c.generation,seq-1,0},"|")))
-    assert(not h:receive(c.name,table.concat({"R4","K",h.sid,c.joinToken,c.generation,seq,0},"|")))
+    assert(not h:receive(c.name,table.concat({"R5","K",h.sid,c.joinToken,c.generation,seq-1,0,(c.keepaliveSeq or 0)+1,c.inSeq,h.term},"|")))
+    assert(not h:receive(c.name,table.concat({"R5","K",h.sid,c.joinToken,c.generation,seq,0,(c.keepaliveSeq or 0)+1,c.inSeq,h.term},"|")))
     c:setCombat(false); sim:step(0.3); assert(not p.protected)
     assert(h:setMemberCombat(c.name,true)); assert(p.protected); assert(not M.damage(h.state,c.slot,35))
     assert(h:setMemberCombat(c.name,false)); assert(not p.protected)
@@ -472,17 +491,18 @@ check("protocol: combat notify and roster fallback protect actual guests, reject
     sim:step(0.1); assert(p.protected)
     local t=h.state.time; h:setCombat(true); sim:step(4); eq(h.state.time,t); eq(c.state.time,math.ceil(t*10-0.00001)/10)
     h:setCombat(false); h.env.inCombat=nil; h:setMemberCombat(c.name,false)
-    sim.nodes[2].active=false; sim:step(13); assert(p.protected); sim:step(23); assert(not h.state.players[c.slot])
+    sim.nodes[2].active=false; sim:step(13); assert(p.protected); sim:step(23); assert(h.state.paused and h.leasePaused)
+    assert(h.state.players[c.slot]) -- cannot evict the only peer to evade a partition lease
 end)
-check("protocol: full R4 snapshot preserves mode, clock, hazard, HP, KOs, immunity, protection and bot identities", function()
+check("protocol: full R5 snapshot preserves mode, clock, hazard, HP, KOs, immunity, protection and bot identities", function()
     local s=M.new("brawl"); M.addPlayer(s,1); M.addPlayer(s,2,1); M.start(s)
     s.time=123.4; s.players[1].hp=0; s.players[1].ko=3.2; s.players[1].invuln=0; s.players[1].kos=7; s.players[1].protected=true
     s.players[2].hp=65; s.players[2].invuln=0.8
     local chunks=N.encodeState(s,"wire",999999,999999,999999,{ {name="Host-Realm",slot=1} })
-    local parts={}; for i,p in ipairs(chunks) do parts[i]=string.match(p,"^R4|S|[^|]+|[^|]+|[^|]+|[^|]+|(.+)$") end
+    local parts={}; for i,p in ipairs(chunks) do parts[i]=string.match(p,"^R5|S|[^|]+|[^|]+|[^|]+|[^|]+|(.+)|[^|]+$") end
     local q=N.decodeState(table.concat(parts)); assert(q); eq(q.mode,"brawl"); eq(q.time,123.4)
-    eq(q.bossMotion.phase,"patrol"); eq(q.bossMotion.remaining,5); eq(q.bossMotion.fromLane,4); eq(q.bossMotion.toLane,5)
-    eq(q.hazard.phase,"idle"); eq(q.hazard.remaining,5); eq(#q.hazard.lanes,0)
+    eq(q.bossMotion.phase,"patrol"); eq(q.bossMotion.remaining,3); eq(q.bossMotion.fromLane,4); eq(q.bossMotion.toLane,5)
+    eq(q.hazard.phase,"idle"); eq(q.hazard.remaining,3); eq(#q.hazard.lanes,0)
     eq(q.players[1].hp,0); eq(q.players[1].ko,3.2); eq(q.players[1].kos,7); assert(q.players[1].protected)
     eq(q.players[2].hp,65); eq(q.players[2].invuln,0.8); eq(q.players[2].name,"Pebble Pal"); eq(q._botCount,1)
     local body=table.concat(parts)
@@ -495,10 +515,10 @@ check("protocol: full R4 snapshot preserves mode, clock, hazard, HP, KOs, immuni
 end)
 check("protocol: a three-second snapshot outage still leaves a visible warning and legal dodge", function()
     local sim=simulation(2); local c=sim:connect(2); local h=sim.nodes[1].net
-    assert(h:start()); sim:step(5); eq(h.state.bossMotion.phase,"windup"); local p=h.state.players[c.slot]
+    assert(h:start()); sim:step(3); eq(h.state.bossMotion.phase,"windup"); local p=h.state.players[c.slot]
     p.x, p.invuln = h.state.hazard.lanes[1], 0
     sim:step(1.5); eq(c.state.hazard.phase,"warning")
-    sim.drop=function(packet) return string.sub(packet.payload,1,4)=="R4|S" end
+    sim.drop=function(packet) return string.sub(packet.payload,1,4)=="R5|S" end
     sim:step(3); eq(p.hp,100)
     sim.drop=nil; sim:step(1.3)
     eq(c.state.hazard.phase,"warning"); assert(c.state.hazard.remaining>=1)
@@ -506,7 +526,7 @@ check("protocol: a three-second snapshot outage still leaves a visible warning a
 end)
 local function stateBody(s)
     local chunks, parts = N.encodeState(s,"proof",1,1,1), {}
-    for i,p in ipairs(chunks) do parts[i]=string.match(p,"^R4|S|[^|]+|[^|]+|[^|]+|[^|]+|(.+)$") end
+    for i,p in ipairs(chunks) do parts[i]=string.match(p,"^R5|S|[^|]+|[^|]+|[^|]+|[^|]+|(.+)|[^|]+$") end
     return table.concat(parts)
 end
 local function withMotion(body, record)
@@ -521,7 +541,501 @@ end
 local function motionRecord(phase, mask, remaining, from, to, id)
     return wireBase(id or 1,4)..phase..wireBase(mask,2)..wireBase(remaining,2)..wireBase(from,1)..wireBase(to,1)
 end
-check("protocol: R4 round-trips every real boss phase and fractional position without replaying impacts", function()
+
+local function committedRoom(sim, indices, timeout)
+    local h=sim.nodes[1].net
+    -- Capture AFTER all admissions, and wait for a COMPLETE host-committed
+    -- checkpoint on every requested peer, never patch a client roster by hand.
+    h.checkpointSend=nil; h.nextCheckpoint=sim.time
+    sim:wait(function()
+        local cp=h.committed
+        if not cp or cp.revision~=h.revision then return false end
+        for _,i in ipairs(indices) do
+            local c=sim.nodes[i].net
+            if not c.committed or c.committed.id~=cp.id or c.committed.hash~=cp.hash then return false end
+        end
+        return true
+    end,timeout or 90)
+    return h.committed
+end
+local function frozenEqual(expected, actual, departed)
+    eq(actual.phase,expected.phase); eq(actual.stage,expected.stage); eq(actual.boss,expected.boss)
+    assert(math.abs(actual.time-expected.time)<0.000001); eq(actual.wait,expected.wait)
+    eq(actual.bossDirection,expected.bossDirection); eq(actual.hazardID,expected.hazardID)
+    for i=1,9 do eq(actual.hp[i],expected.hp[i]) end
+    if expected.bossMotion then
+        for _,key in ipairs({"id","phase","fromLane","toLane"}) do eq(actual.bossMotion[key],expected.bossMotion[key]) end
+        assert(math.abs(actual.bossMotion.remaining-expected.bossMotion.remaining)<0.000001)
+        eq(table.concat(actual.bossMotion.lanes,","),table.concat(expected.bossMotion.lanes,","))
+    end
+    for slot,p in pairs(expected.players) do
+        if slot~=departed then
+            local q=actual.players[slot]; assert(q)
+            for _,key in ipairs({"x","y","score","hit","hp","kos","bot","botID","nextAction","nextPunch","nextBot"}) do
+                if type(p[key])=="number" then assert(math.abs((q[key] or -99)-p[key])<0.000001,key) else eq(q[key],p[key],key) end
+            end
+            assert(math.abs(q.ko-p.ko)<0.000001); assert(math.abs(q.invuln-p.invuln)<0.000001)
+        else assert(not actual.players[slot]) end
+    end
+end
+check("migration: graceful active succession preserves exact world, timers, AI, identity and ordinals",function()
+    local sim=simulation(4); local h=sim.nodes[1].net
+    local c=sim:connect(2); sim:connect(3,"spectate"); sim:connect(4)
+    assert(h:addAI()); assert(h:addAI()); assert(h:start()); sim:step(5)
+    local slot,id,joined=c.slot,c.ownMemberID,h.participants[c.ownMemberID].joined
+    h.state.players[slot].score,h.state.players[slot].kos=321,4
+    h.state.players[slot].hp,h.state.players[slot].ko,h.state.players[slot].invuln=0,2.345,0
+    c:setCombat(true); sim:step(0.3)
+    local oldEpoch=h.inputEpoch; local begun=sim.time
+    assert(h:leave()); assert(h.leaving and h.migration and h.state.paused)
+    local cp=h.checkpointSend; assert(cp and cp.participants[id].joined==joined)
+    local frozen=cp.state
+    sim:wait(function() return c.mode=="host" and h.mode=="idle" end,35)
+    eq(c.term,2); eq(c.ownMemberID,id); eq(c.slot,slot); eq(c.role,"play"); eq(c:botCount(),2)
+    eq(c.participants[id].joined,joined); assert(c.inputEpoch>oldEpoch); assert(c.state.paused)
+    frozenEqual(frozen,c.state,1)
+    for _,i in ipairs({3,4}) do eq(sim.nodes[i].net.hostName,c.name); eq(sim.nodes[i].net.term,2) end
+    c:setCombat(false); sim:step(2); assert(not c.state.paused); assert(c.state.time>frozen.time)
+    print(string.format("  Graceful checkpoint %d bytes / %d chunks; handoff %.1fs",#cp.body,cp.total,sim.time-begun-2))
+end)
+check("migration: oldest spectator becomes host without avatar, can change role, old host rejoins newest",function()
+    local sim=simulation(3); local h=sim.nodes[1].net; local c=sim:connect(2,"spectate"); local d=sim:connect(3)
+    local ordinal=h.participants[c.ownMemberID].joined
+    assert(h:setRole("spectate")); assert(not h.slot); eq(h:spectatorCount(),2)
+    assert(h:leave()); sim:wait(function() return c.mode=="host" and h.mode=="idle" end,35)
+    eq(c.role,"spectate"); assert(not c.slot); eq(c.ownMemberID,2); eq(c:spectatorCount(),1)
+    eq(c.participants[c.ownMemberID].joined,ordinal); assert(not c:action("P"))
+    assert(c:setRole("play")); assert(c.slot); eq(c.participants[c.ownMemberID].joined,ordinal)
+    assert(c:setRole("spectate")); assert(not c.slot); eq(c.participants[c.ownMemberID].joined,ordinal)
+    h:discover(); sim:wait(function() return h.lobbies[c.name]~=nil end)
+    assert(h:join(c.name,c.sid,"spectate")); sim:wait(function() return h.mode=="client" end,30)
+    assert(c.participants[h.ownMemberID].joined>c.participants[d.ownMemberID].joined)
+    eq(c:successor(),d.ownMemberID); eq(h.term,2)
+end)
+check("migration: unexpected loss uses complete committed state; spectator and combat host pause",function()
+    local sim=simulation(4); local h=sim.nodes[1].net; local c=sim:connect(2,"spectate")
+    sim:connect(3); sim:connect(4); assert(h:addAI()); assert(h:start()); sim:step(4)
+    c:setCombat(true); sim:step(0.5)
+    local cp=committedRoom(sim,{2,3,4}); local begun=sim.time
+    sim.nodes[1].active=false
+    sim:wait(function() return c.mode=="host" end,40)
+    assert(c.state.paused); eq(c.role,"spectate"); assert(not c.slot); eq(c:botCount(),1)
+    frozenEqual(cp.state,c.state,1)
+    sim:step(3); for i=3,4 do eq(sim.nodes[i].net.term,2); eq(sim.nodes[i].net.hostName,c.name) end
+    print(string.format("  Crash recovery %.1fs from latest complete %d-byte checkpoint",sim.time-begun,#cp.body))
+end)
+check("migration: simultaneous host and oldest failure selects next live rank with real majority",function()
+    local sim=simulation(5); local h=sim.nodes[1].net
+    for i=2,5 do sim:connect(i,i==3 and "spectate" or "play") end
+    committedRoom(sim,{2,3,4,5}); sim.nodes[1].active,sim.nodes[2].active=false,false
+    local c=sim.nodes[3].net; c:setCombat(true)
+    sim:wait(function() return c.mode=="host" end,40); eq(c.role,"spectate"); eq(c.term,2)
+    sim:step(3); for i=4,5 do eq(sim.nodes[i].net.hostName,c.name) end
+end)
+check("migration: incomplete membership/world, outsider, late join and forged rank cannot seize authority",function()
+    local sim=simulation(4); local h=sim.nodes[1].net; local c=sim:connect(2); local d=sim:connect(3)
+    local cp=committedRoom(sim,{2,3}); local id=c.ownMemberID
+    local function raw(kind,target,hash,gen)
+        return table.concat({"R5",kind,h.sid,cp.id,hash or cp.hash,2,id,target or id,gen or c.generation,1},"|")
+    end
+    assert(not d:receive(sim.nodes[4].name,raw("Y")))
+    assert(not d:receive(c.name,raw("Y",id,"00000000")))
+    assert(not d:receive(c.name,raw("Y",id,nil,999999)))
+    assert(not d:receive(c.name,table.concat({"R5","D",h.sid,cp.id,cp.hash,2,id,"e",1},"|")))
+    local late=sim:connect(4,"spectate"); assert(not cp.participants[late.ownMemberID])
+    sim.drop=function(p) return p.sender==h.name and (p.payload:sub(1,4)=="R5|X" or p.payload:sub(1,4)=="R5|V") end
+    sim.nodes[1].active=false; sim:step(23)
+    assert(late.migration and late.state.paused); assert(not late:checkpointEligible(late.committed))
+    assert(not late:action("R")); assert(not h:receive(late.name,raw("U")))
+    -- No complete checkpoint at all is a hard stop, not fabricated local order.
+    local sim2=simulation(2); local n=sim2:connect(2); sim2.nodes[1].active=false
+    n.committed=nil; sim2:step(55); eq(n.mode,"client"); assert(n.migration and n.state.paused)
+end)
+check("migration: short partition rolls back only committed state, reconciles old host and rejects old term input",function()
+    local sim=simulation(4); local h=sim.nodes[1].net; local c=sim:connect(2); sim:connect(3); sim:connect(4)
+    assert(h:start()); sim:step(2); committedRoom(sim,{2,3,4})
+    local oldInput=input(c,900,"P"); local oldSid=h.sid
+    sim.drop=function(p,node) return p.sender==h.name or node.name==h.name end
+    sim:step(39); eq(c.mode,"host"); assert(h.state.paused)
+    local htime=h.state.time; sim:step(1); eq(h.state.time,htime)
+    sim.drop=nil; sim:step(5); eq(h.mode,"idle")
+    for i=3,4 do eq(sim.nodes[i].net.hostName,c.name); eq(sim.nodes[i].net.term,2) end
+    assert(not c:receive(h.name,oldInput)); eq(c.sid,oldSid)
+    assert(not c:receive(sim.nodes[3].name,oldInput)); assert(not c:receive(sim.nodes[3].name,oldInput:gsub("|1$","|2")))
+end)
+check("migration: split survivor electorate and missing majority fail closed with bounded timers",function()
+    local sim=simulation(5); local h=sim.nodes[1].net
+    for i=2,5 do sim:connect(i) end; committedRoom(sim,{2,3,4,5})
+    sim.nodes[1].active=false
+    sim.drop=function(p,node)
+        local a=(p.sender==sim.nodes[2].name or p.sender==sim.nodes[3].name)
+        local b=(node.name==sim.nodes[2].name or node.name==sim.nodes[3].name)
+        return a~=b
+    end
+    sim:step(65)
+    for i=2,5 do local n=sim.nodes[i].net; eq(n.mode,"client"); assert(n.migration and n.state.paused); assert(n.migration.expired) end
+    sim.drop=nil; sim:step(5)
+    for i=2,5 do eq(sim.nodes[i].net.mode,"client") end -- no unsafe revote after timeout
+end)
+check("migration: active successor fences input epochs, preserves counters and never replays a hit",function()
+    local sim=simulation(3); local h=sim.nodes[1].net; local c=sim:connect(2); local d=sim:connect(3)
+    h:start(); sim:step(2)
+    assert(h:receive(d.name,input(d,30,"P"))); local old=input(d,31,"P")
+    c:setCombat(true); sim:step(0.4); local cp=committedRoom(sim,{2,3})
+    sim.nodes[1].active=false; sim:wait(function() return c.mode=="host" end,40)
+    eq(c.ownMemberID,2); eq(c.slot,2); eq(c.participants[d.ownMemberID].seq,30)
+    frozenEqual(cp.state,c.state,1); c:setCombat(false); sim:step(3)
+    assert(not c.state.players[c.slot].protected); assert(c:action("R"))
+    local p=c.state.players[d.slot]; local hit=p.hit
+    assert(not c:receive(d.name,old)); assert(not c:receive(d.name,old:gsub("|1$","|2")))
+    assert(not c:receive(d.name,input(d,30,"P")))
+    assert(c:receive(d.name,input(d,31,"P"))); eq(p.hit,(hit+1)%1000)
+    assert(not c:receive(d.name,input(d,31,"P"))); eq(p.hit,(hit+1)%1000)
+    local late=N.encodeState(cp.state,c.sid,999999,cp.epoch,cp.revision,cp.participants,1)
+    for _,packet in ipairs(late) do assert(not d:receive(h.name,packet)) end
+    eq(d.term,2); eq(c.participants[d.ownMemberID].seq,31)
+end)
+check("migration: 40 maximum-name nodes, full actors plus five AI, loss/reorder, complete roster and graceful watcher host",function()
+    local sim=simulation(40,true); local h=sim.nodes[1].net
+    for _=1,5 do assert(h:addAI()) end
+    local c=sim:connect(2,"spectate") -- admitted first, not actor 1 or member 1
+    for i=3,40 do assert(sim.nodes[i].net:join(h.name,h.sid,i<=21 and "play" or "spectate")) end
+    sim:wait(function() for i=2,40 do if sim.nodes[i].net.mode~="client" then return false end end; return true end,89)
+    eq(h:count(),25); eq(h:spectatorCount(),20); eq(h:botCount(),5)
+    assert(h:start()); sim:step(7); c:setCombat(true); sim:step(0.5)
+    sim.jitter,sim.duplicates=true,true
+    local lostFirst={}
+    sim.drop=function(p,node,index)
+        -- Every recipient loses a DIFFERENT checkpoint chunk. This cannot pass
+        -- via a shared-memory roster or a lucky no-loss election.
+        local part=tonumber(p.payload:match("^R5|X|[^|]+|[^|]+|([^|]+)|"))
+        if part and part==index and not lostFirst[index] then lostFirst[index]=true; return true end
+        return (p.serial*7+index*11)%37==0
+    end
+    local start=sim.time; local packets,wire=sim.nodes[1].packets,sim.nodes[1].wire
+    assert(h:leave()); local cp,transfer=h.checkpointSend,h.migration
+    sim:wait(function() return c.mode=="host" and h.mode=="idle" end,36)
+    assert(transfer.acked,"loss fixture must complete actual graceful all-peer acknowledgments")
+    sim:step(5)
+    eq(c.role,"spectate"); assert(not c.slot); eq(c:botCount(),5); eq(c:count(),24); eq(c:spectatorCount(),20)
+    frozenEqual(cp.state,c.state,1)
+    for i=3,40 do
+        local n=sim.nodes[i].net; eq(n.term,2); eq(n.hostName,c.name)
+        for id,m in pairs(c.participants) do
+            assert(n.participants[id]); eq(n.participants[id].name,m.name); eq(n.participants[id].joined,m.joined)
+            eq(n.participants[id].generation,m.generation)
+        end
+    end
+    local seconds=sim.time-start
+    assert(sim.nodes[1].wire-wire<=N.BYTE_BURST+N.BYTE_RATE*seconds)
+    assert(sim.nodes[1].packets-packets<=N.SEND_BURST+N.SEND_RATE*seconds)
+    assert(sim.maxQueue<=N.MAX_QUEUE)
+    print(string.format("  40-node LOSS migration: %d-byte exact checkpoint / %d chunks; %.1fs settle; %.2f msg/s, %.1f charged B/s; max queue %d; display gap %.1fs",#cp.body,cp.total,seconds,
+        (sim.nodes[1].packets-packets)/seconds,(sim.nodes[1].wire-wire)/seconds,sim.maxQueue,sim.maxLag))
+end)
+check("migration: 40-node crashed host preserves five AI and ranks under duplicate/out-of-order/lost election packets",function()
+    local sim=simulation(40,true); local h=sim.nodes[1].net
+    for _=1,5 do h:addAI() end
+    local c=sim:connect(2,"spectate")
+    for i=3,40 do assert(sim.nodes[i].net:join(h.name,h.sid,i<=21 and "play" or "spectate")) end
+    sim:wait(function() for i=2,40 do if sim.nodes[i].net.mode~="client" then return false end end; return true end,89)
+    local indices={}; for i=2,40 do indices[#indices+1]=i end
+    h:start(); sim:step(5); c:setCombat(true); sim:step(0.5)
+    local cp=committedRoom(sim,indices,120)
+    sim.nodes[1].active=false; sim.jitter,sim.duplicates=true,true
+    sim.drop=function(p,node,index) return (p.serial*7+index*11)%23==0 end
+    local began=sim.time; sim:wait(function() return c.mode=="host" end,45); sim:step(8)
+    eq(c:botCount(),5); eq(c.role,"spectate"); frozenEqual(cp.state,c.state,1)
+    for i=3,40 do
+        local n=sim.nodes[i].net
+        if n.term~=2 then print("  Crash convergence",i,n.mode,n.status,n.term,n.migration and n.migration.voted,c.revision,c.configRevision) end
+        eq(n.term,2); eq(n.hostName,c.name)
+    end
+    local recoveredAt=sim.time
+    c:setCombat(false); local clock=c.state.time
+    sim:step(2,function()
+        local active=0
+        for _,node in ipairs(sim.nodes) do
+            local n=node.net
+            if node.active and n.mode=="host" and not n.state.paused then active=active+1 end
+        end
+        assert(active<=1,"healthy survivor majority must never run two authorities")
+    end)
+    assert(c.mode=="host" and not c.state.paused and c.state.time>clock+1.9,
+        "healthy survivor majority must actually resume simulation, not just label a paused host")
+    print(string.format("  40-node crash + 4.35%% recipient loss: %.1fs settle; checkpoint %d bytes; queue %d; unique host advances 2s",recoveredAt-began,#cp.body,sim.maxQueue))
+end)
+check("migration: graceful unresponsive oldest never races an authorized transfer; deadline then next eligible rank",function()
+    local sim=simulation(5); local h=sim.nodes[1].net
+    for i=2,5 do sim:connect(i) end
+    sim.nodes[2].active=false; assert(h:leave())
+    local c=sim.nodes[3].net; c:setCombat(true)
+    sim:step(20); eq(c.mode,"client"); assert(c.state.paused and c.migration)
+    sim:wait(function() return c.mode=="host" end,65); eq(c.term,2); eq(c.ownMemberID,3)
+    eq(h.mode,"idle"); sim:step(3); for i=4,5 do eq(sim.nodes[i].net.term,2) end
+end)
+check("migration: observed post-checkpoint role/membership changes fail closed rather than force an old avatar",function()
+    local sim=simulation(3); local h=sim.nodes[1].net; local c=sim:connect(2); local d=sim:connect(3)
+    committedRoom(sim,{2,3})
+    assert(c:setRole("spectate")); sim:wait(function() return c.role=="spectate" end)
+    sim:step(2); sim.nodes[1].active=false; sim:step(55)
+    for _,n in ipairs({c,d}) do eq(n.mode,"client"); assert(n.migration and n.state.paused) end
+    assert(not c.slot); eq(c.role,"spectate")
+end)
+check("migration: roster-loss fast path still waits past old-host lease before any new simulation authority",function()
+    local sim=simulation(4); local h=sim.nodes[1].net
+    for i=2,4 do sim:connect(i) end; h:start(); sim:step(3)
+    committedRoom(sim,{2,3,4})
+    local roster={}; for i=2,4 do roster[sim.nodes[i].name]=true end
+    sim.drop=function(p,node) return p.sender==h.name or node.name==h.name end
+    for i=2,4 do sim.nodes[i].net:setRoster(roster,true) end
+    local c=sim.nodes[2].net
+    sim:step(18,function()
+        local ticking=0
+        for _,node in ipairs(sim.nodes) do
+            local n=node.net
+            if n.mode=="host" and not n.state.paused then ticking=ticking+1 end
+        end
+        assert(ticking<=1,"roster-loss election overlapped live host lease")
+    end)
+    eq(c.mode,"host"); assert(h.state.paused); eq(c.term,2)
+end)
+check("migration: asymmetric host-outbound loss cannot overlap leases or advance two host clocks",function()
+    local sim=simulation(4); local h=sim.nodes[1].net
+    for i=2,4 do sim:connect(i) end; h:start(); sim:step(3); committedRoom(sim,{2,3,4})
+    sim.drop=function(p,node)
+        if p.sender==h.name then return true end
+        return node.name==h.name and (p.payload:sub(1,4)=="R5|U" or p.payload:sub(1,4)=="R5|Y" or p.payload:sub(1,4)=="R5|D")
+    end
+    local c=sim.nodes[2].net
+    sim:step(40,function()
+        local active=0
+        for _,node in ipairs(sim.nodes) do
+            local n=node.net; if n.mode=="host" and not n.state.paused then active=active+1 end
+        end
+        assert(active<=1,"asymmetric packet loss produced two ticking hosts")
+    end)
+    eq(c.mode,"host"); assert(h.state.paused); local time=h.state.time; sim:step(0.5); eq(h.state.time,time)
+end)
+check("migration: stale tiny opted-in roster cannot elect itself over later real participants",function()
+    local sim=simulation(4); local h=sim.nodes[1].net; local c=sim:connect(2)
+    committedRoom(sim,{2}); local cp=c.committed
+    eq(cp.configRevision,cp.revision)
+    -- Keep the old recovery checkpoint, but allow the mandatory newer fence.
+    -- A majority of old admitted voters must receive/ACK it before new members
+    -- become a certified electorate; unrelated native group members never vote.
+    sim.drop=function(p,node)
+        return node.name==c.name and p.sender==h.name and (p.payload:sub(1,4)=="R5|X" or p.payload:sub(1,4)=="R5|V")
+    end
+    sim:connect(3); sim:connect(4)
+    sim:wait(function() return not h.membershipPending end,15)
+    assert(c.electionFloor>cp.revision); assert(not c:checkpointEligible(cp))
+    sim.drop=function(p,node) return p.sender==h.name and node.name==c.name end
+    sim:step(42)
+    eq(c.mode,"client"); assert(c.migration and c.state.paused)
+    eq(h.mode,"host"); assert(not h.state.paused)
+    eq(h.term,1); assert(not h.migration) -- fenced stale peer cannot seize or stop the stable host
+end)
+check("migration: forty native group members with only three admitted recover through admitted voter certificate",function()
+    local sim=simulation(40); local h=sim.nodes[1].net; local c=sim:connect(2,"spectate"); local d=sim:connect(3)
+    h:start(); sim:step(3); c:setCombat(true); sim:step(0.5)
+    local cp=committedRoom(sim,{2,3}); eq(cp.configRevision,h.revision)
+    local admitted=0; for _ in pairs(cp.participants) do admitted=admitted+1 end; eq(admitted,3)
+    sim.nodes[1].active=false; local began=sim.time
+    sim:wait(function() return c.mode=="host" end,45); sim:step(3)
+    eq(c.role,"spectate"); eq(c.term,2); eq(d.hostName,c.name); frozenEqual(cp.state,c.state,1)
+    for i=4,40 do eq(sim.nodes[i].net.mode,"idle"); assert(not sim.nodes[i].net.state) end
+    print(string.format("  Sparse raid recovery: 40 native / 3 admitted; %.1fs; only two admitted votes",sim.time-began))
+end)
+check("migration: missing old-electorate fence ACK holds new membership paused and uncertified",function()
+    local sim=simulation(4); local h=sim.nodes[1].net; local c=sim:connect(2)
+    local cp=committedRoom(sim,{2})
+    sim.drop=function(p,node)
+        return p.sender==h.name and node.name==c.name and p.payload:sub(1,4)=="R5|W"
+    end
+    sim:connect(3); sim:connect(4); sim:step(8)
+    assert(h.membershipPending and h.state.paused); eq(h.configRevision,cp.revision)
+    assert(not h:captureCheckpoint(false)); eq(h.committed.id,cp.id)
+    sim.drop=nil
+    sim:wait(function() return not h.membershipPending end,10)
+    assert(h.configRevision>cp.revision); assert(c.electionFloor>cp.revision)
+    assert(not c:checkpointEligible(cp)); assert(not h.state.paused)
+end)
+check("migration: membership revision fences authenticate host, member generation and monotonic receipt",function()
+    local sim=simulation(4); local h=sim.nodes[1].net; local c=sim:connect(2); local d=sim:connect(3)
+    committedRoom(sim,{2,3}); local floor=c.electionFloor
+    local function fence(sender,rev,term)
+        return c:receive(sender,table.concat({"R5","W",h.sid,rev,term or h.term},"|"))
+    end
+    assert(not fence(d.name,h.revision+10)); assert(not fence(h.name,h.revision+10,h.term+1))
+    eq(c.electionFloor,floor)
+    assert(not fence(h.name,floor-1))
+    local old=table.concat({"R5","O",h.sid,c.joinToken,c.generation,h.revision,c.inSeq,c:incarnation().first,h.term},"|")
+    assert(h:receive(c.name,old)); assert(not h:receive(d.name,old))
+    assert(not h:receive(sim.nodes[4].name,old))
+    assert(c:setRole("spectate")); sim:wait(function() return c.role=="spectate" end)
+    assert(not h:receive(c.name,old)); assert(h.revision>floor)
+    sim:wait(function() return not h.membershipPending end,10); assert(c.electionFloor>=h.revision)
+end)
+check("migration: already cast election vote cannot acknowledge a competing membership revision",function()
+    local sim=simulation(3); local h=sim.nodes[1].net; local c=sim:connect(2); sim:connect(3)
+    local cp=committedRoom(sim,{2,3}); sim.nodes[1].active=false
+    sim.drop=function(p,node) return p.sender==sim.nodes[3].name end
+    sim:step(38); assert(c.migration and c.migration.voted)
+    local floor=c.electionFloor
+    assert(not c:receive(h.name,table.concat({"R5","W",c.sid,cp.revision+1,c.term},"|")))
+    eq(c.electionFloor,floor); assert(not c.queue.membershipAck)
+end)
+check("migration: genuine delayed old-generation vote stays locked across same-room reset and re-admission",function()
+    local sim=simulation(4); local h=sim.nodes[1].net; local a=sim:connect(2); local b=sim:connect(3); sim:connect(4)
+    local cp=committedRoom(sim,{2,3,4}); local delayed; local rejoin=false
+    sim.drop=function(p,node)
+        if p.sender==h.name and (node.name==a.name or (node.name==b.name and not rejoin)) then return true end
+        if p.sender==b.name and p.payload:sub(1,4)=="R5|Y" and node.name==a.name then delayed=p.payload; return true end
+        return node.name==h.name and (p.payload:sub(1,4)=="R5|U" or p.payload:sub(1,4)=="R5|Y")
+    end
+    sim:step(38); assert(delayed and a.migration.voted==a.ownMemberID and b.migration.voted==a.ownMemberID)
+    assert(h.leasePaused); local oldGeneration=b.generation
+    assert(b:leave()); sim:step(0.3)
+    assert(not h.withdrawn[b.name..":"..oldGeneration],"already emitted votes cannot be revoked by Leave")
+    rejoin=true; h.lastAdvert=nil; h:advertise(); sim:step(2)
+    assert(b:join(h.name,h.sid,"spectate")); sim:wait(function() return b.mode=="client" end,20)
+    assert(b.generation>oldGeneration); assert(b:incarnation().voted)
+    sim:step(3); assert(h.membershipPending and h.state.paused)
+    assert(not b:receive(h.name,table.concat({"R5","W",h.sid,h.revision,h.term},"|")))
+    assert(not b.queue.membershipAck)
+    assert(a:receive(b.name,delayed)); sim:step(0.3)
+    eq(a.mode,"host"); assert(h.state.paused)
+    local t=h.state.time; sim:step(1); eq(h.state.time,t)
+    assert(not (a.mode=="host" and not a.state.paused and h.mode=="host" and not h.state.paused))
+end)
+check("migration: late non-voting adopter locks its emitted old-term recovery witnesses",function()
+    local sim=simulation(4); local h=sim.nodes[1].net
+    local a=sim:connect(2); sim:connect(3); local late=sim:connect(4)
+    committedRoom(sim,{2,3,4})
+    local key=h.name..":"..h.sid..":"..h.term
+    sim.drop=function(p,node)
+        if p.sender==h.name and (node.name==sim.nodes[2].name or node.name==sim.nodes[3].name) then return true end
+        return node.name==h.name and (p.payload:sub(1,4)=="R5|U" or p.payload:sub(1,4)=="R5|Y" or p.payload:sub(1,4)=="R5|D")
+    end
+    sim:wait(function() return a.mode=="host" end,45)
+    assert(not late.migration and not late:incarnation().voted)
+    sim.nodes[1].active=false
+    sim:wait(function() return late.hostName==a.name end,25)
+    assert(late.witness and late.incarnations[key].voted,
+        "a genuine witness must retain the old vote lock even without an initial election ballot")
+    sim:step(2)
+    local emitted=false
+    for _,p in ipairs(sim.sent) do
+        if p.sender==late.name and p.payload:match("^R5|Y|.*|1$") then emitted=true end
+    end
+    assert(emitted); late:reset(); assert(late.incarnations[key].voted)
+end)
+check("migration: fresh process rejoin cannot claim a forgotten prior-generation vote fence",function()
+    local sim=simulation(2); local h=sim.nodes[1].net; local c=sim:connect(2)
+    local cp=committedRoom(sim,{2}); local oldGeneration=c.generation
+    -- Actual new protocol instance, not deleting a lock from an existing peer.
+    local fresh=N.new(c.env); sim.nodes[2].net=fresh; fresh:setRoster(sim.roster,true)
+    fresh:discover(); sim:wait(function() return fresh.lobbies[h.name] end)
+    assert(fresh:join(h.name,h.sid,"spectate")); sim:wait(function() return fresh.mode=="client" end,20)
+    assert(fresh.generation>oldGeneration); eq(fresh:incarnation().first,fresh.generation)
+    sim:step(4); assert(h.membershipPending and h.state.paused); eq(h.configRevision,cp.revision)
+    assert(h.configAcks[fresh.name].first>oldGeneration)
+end)
+check("migration: asymmetric host roster shrink is not proof that old voters retired",function()
+    local sim=simulation(4); local h=sim.nodes[1].net; local a=sim:connect(2)
+    local cp=committedRoom(sim,{2})
+    sim.drop=function(p,node) return p.sender==h.name and node.name==a.name end
+    local hostView={}; for name in pairs(sim.roster) do if name~=a.name then hostView[name]=true end end
+    h:setRoster(hostView,true); sim:connect(3); sim:connect(4); sim:step(8)
+    assert(h.membershipPending and h.state.paused); eq(h.configRevision,cp.revision)
+    assert(not h:captureCheckpoint(false))
+    sim:wait(function() return a.mode=="host" end,45)
+    assert(h.state.paused); local t=h.state.time; sim:step(1); eq(h.state.time,t)
+end)
+check("migration: delayed final checkpoint chunk cannot refresh the 120-second evidence lifetime",function()
+    local sim=simulation(2); local h=sim.nodes[1].net; local c=sim:connect(2)
+    h.checkpointSend=nil; h.nextCheckpoint=sim.time; h:captureCheckpoint(false)
+    local cp=h.checkpointSend; local withheld
+    sim.drop=function(p)
+        local id,part,total=p.payload:match("^R5|X|[^|]+|([^|]+)|([^|]+)|([^|]+)|")
+        if tonumber(id)==cp.id and part==total then withheld=p.payload; return true end
+        if tonumber(id) and tonumber(id)>cp.id then return true end
+        local commit=p.payload:match("^R5|V|[^|]+|([^|]+)|")
+        return commit and tonumber(commit)>cp.id
+    end
+    sim:step(110); assert(withheld)
+    assert(c:receive(h.name,withheld)); eq(c.committed.id,cp.id)
+    assert(c.committed.evidenceAge>100,"assembly incorrectly reset evidence age")
+    sim.nodes[1].active=false; sim:step(60)
+    eq(c.mode,"client"); assert(c.migration and c.state.paused); assert(not c:checkpointEligible(c.committed))
+end)
+check("migration: replayed heartbeat/admission/role packets cannot sustain a vanished authority lease",function()
+    local sim=simulation(2); local h=sim.nodes[1].net; local c=sim:connect(2)
+    sim:step(10); local last
+    for _,p in ipairs(sim.sent) do if p.sender==c.name and p.payload:sub(1,4)=="R5|K" then last=p.payload end end
+    assert(last); local seen=h.participants[c.ownMemberID].seen
+    assert(not h:receive(c.name,last)); eq(h.participants[c.ownMemberID].seen,seen)
+    sim.nodes[2].active=false
+    local admission=table.concat({"R5","B",h.sid,c.joinToken,c.generation,h.term},"|")
+    sim:step(22,function()
+        h:receive(c.name,last); h:receive(c.name,admission)
+    end)
+    eq(h.participants[c.ownMemberID].seen,seen); assert(h.leasePaused and h.state.paused)
+end)
+check("migration: exact ordinal and name ranking excludes AI and does not depend on actor/member id",function()
+    local sim=simulation(4); local h=sim.nodes[1].net
+    local candidates={
+        [9]={name=sim.nodes[3].name,joined=5,slot=1},
+        [2]={name=sim.nodes[2].name,joined=5},
+        [40]={name=sim.nodes[4].name,joined=1,bot=true},
+        [1]={name=h.name,joined=1,slot=25}
+    }
+    eq(h:successor(candidates),2)
+    eq(h:successor(candidates,{[9]=true}),9)
+    candidates[9].joined=4; eq(h:successor(candidates),9)
+end)
+check("migration: mixed AI profile decisions and legal cadence continue exactly through graceful and crash checkpoints",function()
+    for _,graceful in ipairs({true,false}) do
+        local sim=simulation(2); local h=sim.nodes[1].net
+        assert(h:setMode("brawl")); sim:step(6)
+        local c=sim:connect(2,"spectate"); assert(h:setRole("spectate"))
+        for _=1,5 do assert(h:addAI()) end
+        assert(h:start()); sim:step(7); c:setCombat(true); sim:step(0.5)
+        local cp
+        if graceful then
+            assert(h:leave()); cp=h.checkpointSend
+            sim:wait(function() return c.mode=="host" and h.mode=="idle" end,35)
+        else
+            cp=committedRoom(sim,{2}); sim.nodes[1].active=false
+            sim:wait(function() return c.mode=="host" end,45)
+        end
+        assert(c.state.paused); eq(c:botCount(),5); assert(not c.slot)
+        local function clone(v) if type(v)~="table" then return v end; local q={}; for k,x in pairs(v) do q[k]=clone(x) end; return q end
+        local reference=clone(cp.state); reference.paused=false
+        c:setCombat(false)
+        local decisions=0
+        for _=1,240 do
+            for slot,p in pairs(reference.players) do
+                if p.bot then
+                    local q=c.state.players[slot]; eq(q.botID,p.botID)
+                    local profile=M.botProfile(p.botID); assert(profile and profile.key and profile.interval)
+                    eq(M.botProfile(q.botID).key,profile.key)
+                    eq(M.botAction(c.state,slot),M.botAction(reference,slot)); decisions=decisions+1
+                    assert(math.abs((q.nextBot or 0)-(p.nextBot or 0))<0.000001)
+                end
+            end
+            M.tick(reference,0.1); sim:step(0.1)
+            frozenEqual(reference,c.state,nil)
+        end
+        assert(decisions>=1200)
+        -- Replay resets authoritative clocks for the same immutable mixed IDs.
+        c.state.phase="victory"; assert(c:start()); sim:step(0.1)
+        for _,p in pairs(c.state.players) do if p.bot then assert(M.botProfile(p.botID)); assert(p.nextBot and p.nextBot>c.state.time) end end
+        print(string.format("  %s profile checkpoint continuity: %d exact per-bot decisions across 24s",graceful and "Graceful" or "Crash",decisions))
+    end
+end)
+check("protocol: R5 round-trips every real boss phase and fractional position without replaying impacts", function()
     for stage=1,4 do
         local s=M.new(); M.addPlayer(s,1); M.start(s)
         s.stage,s.phase,s.wait=stage-1,"clear",0.1; M.tick(s,0.1)
@@ -534,18 +1048,18 @@ check("protocol: R4 round-trips every real boss phase and fractional position wi
             local again=N.decodeState(stateBody(q)); assert(again); eq(again.players[1].hp,health)
         end
         M.tick(s,2.3); prove("patrol")
-        M.tick(s,2.7); M.tick(s,1.3); prove("windup")
+        M.tick(s,0.7); M.tick(s,1.3); prove("windup")
         M.tick(s,5); M.tick(s,0.7); prove("attack")
         M.tick(s,0.5); M.tick(s,2.1); prove("recover")
     end
 end)
-check("protocol: strict R4 phase clocks, routes, lane masks and stage-derived ground kind reject malformed worlds", function()
+check("protocol: strict R5 phase clocks, routes, lane masks and stage-derived ground kind reject malformed worlds", function()
     local s=M.new(); M.addPlayer(s,1); M.start(s); local body=stateBody(s)
     local bad={
         "-", "0001w0105", motionRecord("x",0,50,4,5), motionRecord("p",0,50,4,5,0),
         motionRecord("p",0,0,4,5), motionRecord("p",0,51,4,5), motionRecord("p",1,50,4,5),
         motionRecord("p",0,50,1,2), motionRecord("p",0,50,6,7), motionRecord("p",0,50,2,6),
-        motionRecord("p",0,50,4,4), motionRecord("w",0,70,5,5), motionRecord("w",1,71,5,5),
+        motionRecord("p",0,30,4,4), motionRecord("w",0,70,5,5), motionRecord("w",1,71,5,5),
         motionRecord("w",3,70,5,5), motionRecord("w",1,70,4,5), motionRecord("a",1,6,5,5),
         motionRecord("a",1,0,5,5), motionRecord("a",1,5,4,5), motionRecord("r",1,50,5,5),
         motionRecord("r",0,51,5,5), motionRecord("r",0,50,4,5), motionRecord("w",128,70,5,5)
@@ -553,7 +1067,7 @@ check("protocol: strict R4 phase clocks, routes, lane masks and stage-derived gr
     for _,record in ipairs(bad) do assert(not N.decodeState(withMotion(body,record)),"accepted malformed record "..record) end
     assert(N.decodeState(withMotion(body,motionRecord("w",64,70,5,5))))
     assert(N.decodeState(withMotion(body,motionRecord("a",1,5,5,5))))
-    assert(N.decodeState(withMotion(body,motionRecord("r",0,50,5,5))))
+    assert(N.decodeState(withMotion(body,motionRecord("r",0,30,5,5))))
     for stage=2,4 do
         s.stage,s.boss=stage,8+stage*2; body=stateBody(s)
         if stage==2 then
@@ -561,13 +1075,13 @@ check("protocol: strict R4 phase clocks, routes, lane masks and stage-derived gr
             assert(not N.decodeState(withMotion(body,motionRecord("w",5,70,4,4)))) -- separated columns
             assert(N.decodeState(withMotion(body,motionRecord("w",3,70,4,4))))
         elseif stage==3 then
-            assert(N.decodeState(withMotion(body,motionRecord("p",0,50,4,4)))) -- pursuit can settle
+            assert(N.decodeState(withMotion(body,motionRecord("p",0,30,4,4)))) -- pursuit can settle
             assert(not N.decodeState(withMotion(body,motionRecord("p",0,50,4,6))))
             assert(not N.decodeState(withMotion(body,motionRecord("w",7,70,4,4)))) -- not origin +/-1
             assert(N.decodeState(withMotion(body,motionRecord("w",28,70,4,4))))
         else
             assert(not N.decodeState(withMotion(body,motionRecord("p",0,50,4,6,1))))
-            assert(N.decodeState(withMotion(body,motionRecord("p",0,50,4,6,2))))
+            assert(N.decodeState(withMotion(body,motionRecord("p",0,30,4,6,2))))
             assert(not N.decodeState(withMotion(body,motionRecord("w",11,70,4,4))))
             assert(not N.decodeState(withMotion(body,motionRecord("w",15,70,4,4)))) -- too many columns
             assert(N.decodeState(withMotion(body,motionRecord("w",7,70,4,4))))
@@ -585,7 +1099,7 @@ check("protocol: mid-patrol late join reconstructs position; invalid new-phase s
     local old, seq=c.state,c.inSeq
     local malformed=withMotion(stateBody(h.state),motionRecord("a",1,5,4,5)) -- attack cannot move
     local chunks={}; local total=math.ceil(#malformed/N.CHUNK_BYTES)
-    for i=1,total do chunks[i]=table.concat({"R4","S",h.sid,seq+20,i,total,string.sub(malformed,(i-1)*N.CHUNK_BYTES+1,i*N.CHUNK_BYTES)},"|") end
+    for i=1,total do chunks[i]=table.concat({"R5","S",h.sid,seq+20,i,total,string.sub(malformed,(i-1)*N.CHUNK_BYTES+1,i*N.CHUNK_BYTES),h.term},"|") end
     assert(not deliver(c,h,chunks)); eq(c.state,old); eq(c.inSeq,seq)
     h.state.bossMotion={id=3,phase="attack",remaining=0.4,fromLane=5,toLane=5,lanes={1}}
     h.state.players[1].hp=65; M.syncHazard(h.state)

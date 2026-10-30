@@ -1,116 +1,106 @@
 # Rampage — FOUR MORE BOSSES!
 
-**<Toast>'s pocket raid-break arcade.** Original monsters climb and smash a shared city, then flatten four fictional bosses. For **TBC Classic 2.5.6 / Interface 20506**. Inspired by classic climb-and-smash play, with original art and no affiliation with the original Rampage game's owners.
+**<Toast>'s pocket raid-break arcade.** Original monsters smash a shared city, then flatten four fictional bosses. For **TBC Classic 2.5.6 / Interface20506**. Original art inspired by classic climb-and-smash play; no affiliation with the original Rampage game's owners.
 
-## Hit-feedback playtest — unreleased, compatible R4
+## Brawl-first playtest — unreleased R5
 
-This iteration makes damage easier to **feel and understand** ([issue #10](https://github.com/lemillermicrosoft/Rampage/issues/10)): brief monster-local recoil, readable HP-loss numbers/trails, confirmed contact sparks, persistent boss HP/shield/range guidance, and a **Reduced Motion** toggle. It does not rebalance gameplay or add levels.
+The current PR #11 iteration combines confirmed hit feedback ([#10](https://github.com/lemillermicrosoft/Rampage/issues/10)) with a polished city-first UI, INFO/SETTINGS panels, Mouse/Keyboard selection, automatic watching, host succession, faster boss cycles and varied AI profiles ([#12](https://github.com/lemillermicrosoft/Rampage/issues/12)). Unique levels remain deferred.
 
-**This is a new, unreleased candidate based on v0.4.0**, not a new CurseForge/GitHub release. Displayed TOC/app version stays0.4.0. **Model.lua and Protocol.lua are unchanged from v0.4.0; wire protocol remains R4**, with no new messages or budget increase. It can communicate with v0.4.0/R4, but use the same head-labelled feedback candidate on testers who want these visuals. Older v0.3.0/R3 is incompatible.
+**All participants need this same head-labelled R5 candidate.** R5 is incompatible with publishedv0.4.0/R4 and the earlier `eef148f` feedback candidate. The displayed TOC/app version remains0.4.0 because this is a playtest, not a versioned release; that display does not establish protocol compatibility.
 
-The primary WoW-linked checkout stays clean on published **v0.4.0**. Its junction is unchanged; simply reloading that installation **does not load this candidate**. No forced reload, install or external SavedVariables change is performed. Keep the matching release on household machines until choosing a coordinated playtest; do not extract over the owner's primary-checkout junction. Earlier worktrees/releases/candidates remain preserved. A new approval is required to merge/tag/publish; previous release approvals are consumed.
+**Unreleased local playtest; not a public release.** The owner explicitly authorized local installation at13:22 onOct30. The installation procedure stages the verified ZIP into a frozen head-labelled runtime directory, reversibly repoints only this PC's anniversary AddOns/Rampage junction, and verifies installed-file hashes. The primary checkout stays clean on publishedv0.4.0; do not extract through the old junction or edit that checkout. Keep the stable release and earlier ZIPs for rollback. The separate installation receipt records whether the junction switch actually completed; these packaged docs alone are not installation proof. No automatic reload or installation on another machine. Fresh approval is required to merge/tag/upload; previous publication approval was consumed byv0.4.0.
 
-Moving bosses, shared actual hitbox/AI, seven-second warnings, the prior stale-render cue fix, restored building windows/trim and input-mode persistence are retained. **Co-op remains the default**, Brawl is optional, unique levels remain later work.
+## Start playing
 
-## Try the new fun in one minute
+1. After choosing a coordinated candidate installation, type **`/rampage`**. In a PARTY/RAID, opening automatically watches an available Rampage room. Watching creates **no avatar, damage target or captured keyboard**.
+2. Click **Join fight** to explicitly enter **BRAWL / PvP**. **Leave fight** returns to watching without leaving the room. A full fight keeps you watching; a seat becoming free never auto-joins you.
+3. Choose **Mouse** for the compact action buttons or **Keyboard** for WASD/arrows +Space. Keyboard selection is explicit and shows actual capture state. Escape releases keys back to Mouse; there is no automatic recapture.
+4. If no room exists, choose **Host Brawl**, then Start. **Solo practice** or `/rampage solo` starts local Brawl without requiring a group. Solo and hosting do not automatically capture keys.
+5. **SETTINGS → + Add AI** adds a mixed-profile bot. **INFO** contains instructions, shortcuts and feedback explanations. Settings holds audio/mute, Reduced Motion, owner AI controls and **Leave game**.
 
-1. After review and choosing to test, install the **head-labelled hit-feedback ZIP** in a coordinated test install and safely `/reload` when ready. Preserve v0.4.0 for rollback. Do not extract over the owner's existing junction; it deliberately still targets the stable release.
-2. Type **`/rampage solo`** for default Co-op. Click **+ ADD AI** to add one helper. Click **PLAY • GRAB KEYS** and use **WASD/arrows + Space**. **Escape releases keys**.
-3. For friendly fighting, **Leave**, select **BRAWL**, then **Solo practice**, or use **`/rampage solo brawl`**. Add one AI and punch it from the same height within one lane. AI can hit you back, but still works on the city.
-4. Watch the boss **patrol → raise/charge → attack → recover**. Dodge early during its seven-second warning. Ranged attacks affect every height in marked columns; **Snack Tax's stomp is ground-only**. After the city falls, chase the boss and punch from within one lane on the ground; the gold bracket shows its reach.
-5. In a party/raid, open `/rampage`, choose Co-op or Brawl and **HOST LOBBY**. Add AI if desired, then **START GAME**. Friends explicitly click **JOIN CO-OP**, **JOIN BRAWL**, or **SPECTATE**.
+Only Brawl is exposed in the UI/public new-game commands. Co-op Model/Protocol code remains for future use and regression tests. A legacy/internal Co-op room is never silently changed to PvP; this public UI can watch but does not offer a casual Co-op fighter path. `/rampage solo coop` and `/rampage host coop` are rejected, not reinterpreted.
 
-A host can choose mode only in lobby/victory **with no other real participants joined**. No silent mid-match or replay conversion into PvP. Start a new lobby or have guests leave before changing mode. Spectators switching to Brawl see **JOIN BRAWL**; a generic chat `/rampage join` or `/rampage play` does not silently opt them into PvP.
+### Watching and room ownership
 
-## What the feedback means
+- Existing selected room remains sticky. If several unrelated rooms are discovered together, name/session ordering chooses a deterministic fallback; independent world states are never merged. Hosting does not replace an already known room. Simultaneous unseen Host clicks are not a global creation-time oracle.
+- Closed advertisements do not open the window or subscribe. Discovery is user-open/visible-gated and throttled. No-party state offers calm solo practice rather than an endless joining screen.
+- **Close hides; Leave game exits.** Closing retains admitted membership and host tenure, with keys released. Reopening does not restore keyboard capture. Leave disables automatic rejoin until a fresh user open/Watch action.
+- Fighter/watch role changes preserve continuous admission order. A host can watch without an avatar while retaining room controls. Focus loss and real WoW combat do not transfer authority.
+- On host departure, succession uses host-assigned admission order among real participants, including watchers and excluding AI. A promoted watcher does not become a fighter. Complete verified checkpoints restore the world rather than starting a new game. Graceful Leave may spend time paused while transferring; crashes/partitions may roll back uncommitted progress or remain paused when authority evidence is insufficient. Small graceful handoff measured about5s; the40-person loss fixture about32s plus settling. Crash recovery measured about39–44s, not instant. See [QA.md](QA.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md) for exact results.
+- A true client reload/process restart forgets volatile voting history. If too few old members remain to safely certify the replacement membership, the room pauses rather than risking two hosts—particularly possible in a two-person room. Leave and establish a fresh room if it cannot recover. This is not seamless reload/partition recovery; ordinary same-process role changes/Leave/rejoin preserve the applicable order/lineage rules.
 
-- **Incoming:** `YOU -20 HP` means your health actually fell by20. A short warm tint, at most0.28s damped sprite recoil and an amber health-loss trail reinforce it. Nearby monsters react more subtly. No world camera, window or authoritative hitbox moves.
-- **Outgoing:** `YOU HIT -1 HP` over a building/boss is an exact confirmed host/solo local action. A swing into empty space only shows the fist—no contact sparks or damage number. Building HP damage is **not** the10 fame awarded for a floor hit, nor boss damage the15 fame awarded for a boss hit.
-- **Remote:** `TEAM HIT -3 HP` is total observed target HP loss between timely worlds, potentially several hits from anyone/AI. R4 has no per-attacker receipts, so the client never claims those hits were yours. A successful input send proves only swing intention. This does not reduce1.25s network feedback delay.
-- **Boss clarity:** HP/maxHP remains visible while shielded or exposed. The readout shows remaining floors to destroy, and ground/range guidance uses the same moving-boss helper as hit checks. Host/solo air punches get throttled known explanations; remote guidance/bracket is explicitly **sampled/estimated**, not a host rejection acknowledgement. In Brawl, the highlighted eligible rival is the lowest slot at the same height within one lane; city/boss damage can also occur on that punch under the existing rules.
-- **Reduced Motion:** toggle at bottom right. Saves through ordinary addon settings; immediately removes recoil, decorative bob/bounce, number rise and moving particles. Useful static numbers, health trails, highlights and essential boss telegraph poses remain. Gameplay movement and damage do not change.
-- New-session/reopen/stage/replay/role/known slot replacement, pause/combat, expired/duplicate/reordered/gapped/stale samples rebaseline without catch-up effects. The previous arrival's age is checked before replacing its timestamp, even after a render stall;2.5s is the inclusive cutoff. Heals/respawns do not become damage. Repeated renders never repeat a hit or award score.
+## Controls and accessibility
 
-Feedback is deliberately bounded:32 queued receipts, at most8 nonlocal receipts per undrained batch,12 reused number labels with local/boss priority, existing72 pooled particles. Labels can combine short-lived losses; they are not a fabricated hit-by-hit combat log. Under heavy load some nonlocal decoration is omitted. R4 cannot distinguish a same-ID bot removed/readded entirely between snapshots; visible removals, bot-ID changes and known membership generations do reset feedback.
+Mouse/Keyboard selectors are mutually exclusive and reflect real capture, not a remembered wish. Ordinary city intermissions preserve the selected mode while held actions are cleared; the next city requires key-up/fresh key-down. Escape, chat/edit focus, unknown shortcuts, modifiers, window-focus loss, long interruptions, close/Leave, KO and real combat release capture. **No permanent or override bindings, protected spell actions, or automatic recapture.**
 
-## Rules and balance
+INFO and SETTINGS release keyboard capture before opening, block gameplay input while open, and close with the main window or combat. Closing them leaves Mouse selected. Actual-client focus/taint still needs manual verification; mocks cannot prove native event ordering.
 
-### Smash the city
-- Walk sideways on the ground; climb towers in lanes **2, 4, 6**.
-- Punch each floor twice, descend between floors. The lowest floor can also be hit from the ground. Collapsing a tower drops its climbers to the street.
-- Flatten all towers to remove the boss shield; punch the exposed boss **on the ground within one lane of its actual moving position**. Fixed lanes3–5 no longer hit a boss that has moved away. No damage from body contact.
-- Defeat **The Crumb Baron**, **Permitron 9000**, **The Snack Tax**, and **Queuezilla**. Boss HP is 10/12/14/16; two-second scene changes lead to shared victory.
-- Floor hits give 10 fame, final tower collapse 40, boss hits 15 and the final boss hit 100. **KOs are a separate counter**, not bonus city fame. Team fame sums current actors; removing an actor/switching to spectate removes that actor's current score. Personal best persists.
+**Reduced Motion** in Settings persists through normal addon settings. It immediately removes decorative recoil/bob/bounce, number rise and moving particles, while retaining health text/trails, target highlights and essential boss telegraph poses. Gameplay movement is unchanged. No world-camera/UIParent/window shake.
 
-### AI monsters
-**+ ADD AI / - REMOVE AI** are host/solo-only, one monster per click, **maximum five AI within 25 total actors**. They are deterministic in-addon game logic, not an LLM/backend, WoW character bot, or automation of real spells/movement.
+## Read the hit, not the score
 
-Pebble Pal, Noodle Knight, Mochi Boots, Waffle Scout and Bumble Brick climb/smash, fight exposed bosses, try to dodge imminent hazards and briefly scuffle in Brawl. They use the same legal model actions/cooldowns and can be hurt/KO'd. They are intentionally simple, not perfect players. Remove AI removes the oldest bot.
+- **`YOU -20 HP`** is actual incoming health loss: short warm tint, up to0.28s damped sprite-local recoil and amber loss trails. Other actors react more subtly.
+- **`YOU HIT -1 HP`** is exact confirmed host/solo local damage to a building/boss. An air swing shows a fist, not contact sparks or damage numbers. Floor damage is not its10 fame reward; boss damage is not its15 fame reward.
+- **`TEAM HIT -3 HP`** is net target HP loss observed between timely remote worlds, possibly several hits from humans or AI. No per-attacker receipt is invented. Sending input only proves swing intention, not a host-confirmed hit. Hits/heals between samples can aggregate.
+- Numeric boss HP remains visible through shield/exposure. Remaining floors, ground/range guidance and the Brawl priority highlight use actual Model helpers. Client reach guidance is explicitly sampled/estimated, not a guaranteed host hit or rejection.
+- Duplicate/reordered/gapped/stale samples, joins/reopen, stage/replay/role/known actor replacement and authority changes rebaseline without catch-up. Previous-sample age is tested before arrival timestamps are replaced, even after no-render stalls. Heals/respawns are not damage; drawing never applies damage or fame.
 
-AI does not consume any of the **40 real participant** seats. A human joining or switching to Play at the 25-actor cap automatically vacates the oldest AI first. With 20 human actors + five AI, up to 20 real spectators can watch. Without AI, the usual full roster is 25 human actors +15 spectators. No active human is displaced.
+Queues and decoration are bounded:32 queued receipts,8 nonlocal receipts per undrained batch,12 reused labels with local/boss priority,72 particles. Overlapping text stacks rather than overwrites; excess decoration is omitted rather than covering boss health. This is not a complete per-hit combat log. Ordinary display worlds still cannot distinguish a same-ID bot removed and replaced entirely between two received snapshots; observed replacement/reset does rebaseline.
 
-### Health, Brawl and respawns
-- **100 HP**; Brawl punch **20 damage**, boss impact **35 damage**. Co-op punches never harm allies.
-- Brawl hits at most one other actor, at the same height and within one lane. Model actions are capped at 0.2s; PvP punch damage has a separate **0.6s cooldown**. Damage briefly grants 0.8s immunity and knocks you one ground lane or one floor down.
-- At zero HP, **4-second KO**, then respawn at lane 1 with full health and **3 seconds of immunity**. Stage changes reset health/protection timers; replay resets fame and KOs.
-- KO releases keyboard capture; click PLAY after respawn to take control again. Spectators have no avatar, health target, attacks, score or Start authority.
-- The host and mode are trusted for friendly play, not a competitive anti-cheat service. There is no prize, permanent death or PvP penalty outside this minigame.
+## Rules
 
-### Roaming bosses and visible attacks
-Every boss moves and attacks while shielded **and** exposed. Each cycle is **5s patrol →7s locked windup → one impact /0.5s attack pose →5s stationary recovery**. Patrol stays in lanes2–6 and covers at most two lanes in five seconds. The five-second stop lets remote players catch up and punch. Warning origin/targets are fixed before impact, never track your dodge; at least **four of seven lanes remain safe**.
+### City and bosses
+- Walk sideways; climb towers in lanes **2,4,6**. Each floor takes two punches; the lowest floor is reachable from the ground. Collapsing towers drop climbers to the street.
+- Flatten all floors to remove the boss shield. Punch the exposed boss **on the ground within one lane of its actual moving position**—not old fixed lanes3–5. Body contact alone does no damage.
+- Boss HP:10/12/14/16 for **Crumb Baron, Permitron9000, Snack Tax, Queuezilla**. Two-second city transitions lead to shared victory.
+- Floor hits award10 fame, final tower collapse40, boss hits15 and final boss hit100. KOs are separate, not bonus fame. Team fame sums current actors; leaving/spectating removes that actor's current score. Local personal best persists.
 
-- **Crumb Baron:** one-lane reflected stroll; throws crumbs at one warned column, all heights.
-- **Permitron9000:** two-lane reflected march; beams two adjacent warned columns, all heights.
-- **Snack Tax:** one-lane pursuit of the nearest eligible actor, deterministic ties; stomp affects its lane and adjacent lanes **on the ground only**. Climbing is a valid escape.
-- **Queuezilla:** alternating one-/two-lane strides; three adjacent warned columns hit **together**, all heights—not an unannounced sequential sweep.
+### Faster, readable attacks
+Each boss cycle is **3s patrol →7s locked warning →0.5s attack →3s stationary recovery**:13.5s rather than17.5s, **22.9% shorter**, without stronger damage or less warning. Patrol stays within lanes2–6 and travels at most two lanes per segment. Warning origin/targets lock before impact; at least four lanes remain safe.
 
-Visible limb poses and a fixed48-texture pool connect the boss's locked origin to the warned targets. Shield and ground reach move with it. AI follows the same actual hitbox, leaves threatened lanes and waits through impact instead of instantly walking back in.
+- Crumb Baron throws at one column, all heights.
+- Permitron9000 beams two adjacent columns, all heights.
+- Snack Tax pursues then stomps nearby columns **ground-only**; climb to escape.
+- Queuezilla barrages three adjacent columns simultaneously, all heights.
 
-The UI never applies damage. Clients smooth only the current known patrol segment, capped at its endpoint and2.5s snapshot age; pause/staleness freezes the pose and no next phase is predicted. A0.5s attack can fall between1.25s worlds. A timely consecutive windup→recovery receipt can show **0.65s static impact residue**, clearly labelled confirmed, at already-known targets; it never launches a late projectile or awards damage. Late joins, gaps, stale snapshots and pause do not trigger catch-up cues. Not every attack frame is guaranteed visible remotely.
+Boss movement, hit checks and AI use the same position rule. Remote animation follows only a received patrol segment and stops at its endpoint/staleness; no next attack is predicted. A short attack pose may fall between1.25s snapshots. Timely consecutive samples can show static confirmed aftermath at previously warned targets, never a delayed damaging projectile. Seven-second warnings are not a guarantee under arbitrary packet loss; dodge early.
 
-Seven-second warnings exceed the measured **4.0s maximum world gap** in the tested fixture, not arbitrary loss/delay. Remote countdowns are samples and can lag; dodge early. Known-segment animation does not make multiplayer movement/hits low-latency.
+### Health and Brawl
+100 HP,20-damage Brawl punch,35-damage boss impact. Model actions have a0.2s minimum gap; PvP damage has a separate0.6s cooldown. A punch selects the lowest eligible other actor at the same height within one lane, then retains existing city/boss rules. Damage gives brief0.8s immunity and bounded knockback. No profile changes these values.
 
-## Raid controls and protection
+Zero HP causes a4s KO, then full-health respawn with3s immunity. Select Keyboard again after KO if wanted. Watchers have no combat avatar. Real WoW combat hides/releases controls; host combat pauses simulation, and guest combat/protection is reconciled before model hazards/AI ticks. Detection/network delays still exist.
 
-Keyboard capture is explicit and visible, only for an active, healthy monster. **Your chosen keyboard or mouse control mode persists across ordinary stage/intermission transitions.** Captured keys remain routed to Rampage while gameplay is paused between cities; held actions are cleared and require key-up/fresh key-down in the next city. Escape/close and safety releases still cancel capture, with no automatic recapture. Unknown keys/chat shortcuts, edit focus, Escape, hide, Leave, combat, modifier shortcuts, physical missed-key-up reconciliation and long interruptions release it. **No permanent/override keybindings or protected spell actions.** Mouse fallback uses font-safe **A/Left, W/Up, SPACE, S/Down, D/Right** labels. Reopening no longer displays the stale “Window hidden” reason.
+### Varied addon AI
+Settings adds up to **five AI within25 total actors**, one click each; no external bot service or real character automation. Defaults cycle a mixed roster:
 
-Host WoW combat freezes the game clock, AI, hazards, HP/KO/immunity and transitions. A guest in real WoW combat receives damage/action protection via a versioned notification **or** the host's read-only `UnitAffectingCombat` roster check. The fallback is applied before the hazard/AI tick. Unresponsive guests are protected after 12s and removed after 35s. Detection/notification still has an inherent delay; unavailable status cannot be known before evidence arrives. This is friendly protection, not exploit-proof PvP.
+- **Smasher:** spreads work across intact buildings/floors.
+- **Chaser:** helps destroy the shielded city, then pursues the exposed boss.
+- **Scrapper:** briefly seeks Brawl rivals, then returns to objectives; retained Co-op falls back safely.
+- **Dodger:** avoids hazards earlier and positions more cautiously, without immunity or abandoning objectives.
 
-Combat hides the window. Returning can restore the previous window but never recaptures keys automatically. Native taskbar focus/propagation/taint still needs the actual-client checklist in [QA.md](QA.md); a mock cannot prove it. The screenshot's red “You have no target” was not attributed to this addon without evidence.
+The fifth bot reuses a profile with deterministic bias. Profiles differ in actual priorities/cadence, not just names or colors. Hover a crew slot/monster for its profile tag. No manual advanced selection is required. Immutable bot identity and authoritative state keep behavior consistent across recovery; no unseeded client randomness or extra wire profile names. Remove AI removes the oldest bot, never a person.
 
-## Optional audio and visuals
+AI consumes no real membership seat. Rooms support40 real participants and25 actors:20 human fighters+5 AI can coexist with20 watchers. A human joining at the actor cap evicts the oldest AI before denying admission; existing human fighters are not displaced. Watchers are not automatically promoted.
 
-**Local BM** remains **OFF by default**, plus independent **Mute Rampage**. It uses separately installed `BlasterMaster_GetSfxPath` mappings (`crit`, `combatStart`, `levelUp`), honors None/mute/provider variants, checks playback success, and never copies sound files or changes global volume. Local hurt cues are rare/throttled; spectators hear only major transitions. No 25-monster network sound chorus or catch-up burst.
+## Network and evidence
 
-Original warm city and creatures show HP, hurt flashes, immunity, KO countdowns and AI/KO labels. Seven fixed lane markers,72 pooled particles and48 boss-cue textures handle warnings/attacks/destruction. Buttons retain hover/pressed/disabled/selected states. The900×660 window fits down to available space. Pools remain **106 frames /1,586 textures /111 fonts** after exactly500 animated25-actor renders; this is bounded WoW-object evidence, not zero Lua allocations or native frame-time proof.
+**R5 only; normal PARTY/RAID** reaches members of the same group, including different raid subgroups. No independent-party bridge, instance-chat/battleground routing, external server or competitive anti-cheat claim. Authenticated sender/room/term, admission generation, role and input epoch/sequence validate messages. Bots are never physical roster members.
 
-## Network and limitations
+Ordinary worlds remain1.25s apart; faster rendering/input sampling is not faster network response. All traffic, including new recovery checkpoints, shares **700 chargedB/s and8messages/s** limits, with1,000-byte/10-message bursts and255-byte packet maximum. Checkpoints carry complete bounded membership and exact simulation timers for recovery. Safety takes priority over availability when membership/authority evidence is inconsistent. Friendly, nonprecision play; native transport and partition behavior cannot be certified by headless tests.
 
-**R4, incompatible with R1/R2/R3.** Actual roster sender, host/session, admission generation, input epoch/sequence and role validation remain. Bots have no physical membership identity and cannot be commanded by forged guest packets. Complete worlds carry mode, game clock, human/bot positions, HP/KO/immunity/protection/KOs and hazard pattern/timer.
-
-- **Three fragments per world**, maximum-valid fixture **494 assembled body bytes /593 combined payload bytes /641 charged bytes**, largest packet209/255. R4 adds only two body bytes over R3; atomic bounded assembly/stale/malformed/duplicate/incomplete rejection retained.
-- Per sender: **8 msgs/s / 700 charged B/s**, burst 10 /1,000, including 16-byte accounting allowance per packet; queue 128, assemblies 3×3 with 6s expiry.
-- **Complete snapshots every 1.25s (0.8Hz)**; ~30Hz animation and ~5Hz key sampling do not mean fast network response. No prediction. Name carousel one record/second; names may populate gradually.
-- Maximum-name40-client simultaneous join took **41.3s**, host685.9 chargedB/s, queue53/128 in simulation; join timeout90s. Host-world timeout20s; keepalive8s. No host migration, no instance-chat/battleground routing; normal PARTY/RAID only.
-- **82.9s40-client fixture:**20 human actors+5AI+20spectators, four moving bosses/replay/combat and4.35% loss+jitter/reordering/duplicates; human drivers chase from their delayed snapshots, exact final convergence. Host **3.46msgs/s /513.1chargedB/s**, whole group **36.00msgs/s /1,375.9payloadB/s**. Queue41/128; maxworldgap4.0s.
-
-These are headless tests, **not real 40-client WoW transport measurements**. Combat is deliberately forgiving and noncompetitive at this cadence. Start with solo and two clients before a crowded raid. Protocol details: [docs/PROTOCOL.md](docs/PROTOCOL.md).
-
-## Development / evidence
+Development uses existing locked Fengari/luaparse tools:
 
 ```text
 npm ci --ignore-scripts
 npm test
 npm run check:lua51
 npm audit --audit-level=moderate
-node tests/run.cjs --suite=wow
-node tests/run.cjs --suite=feedback
-node tests/ui-preview.cjs --scene hit-before --output docs/previews/hit-before.svg
-node tests/ui-preview.cjs --scene hit-impact --output docs/previews/hit-impact.svg
-node tests/ui-preview.cjs --scene hit-settle --output docs/previews/hit-settle.svg
-node tests/ui-preview.cjs --scene hit-reduced --output docs/previews/hit-reduced.svg
+node tests/run.cjs --suite=flow
+node tests/ui-preview.cjs --scene flow-watch --output docs/previews/flow-watch.svg
+node tests/ui-preview.cjs --scene flow-settings --output docs/previews/flow-settings.svg
+node tests/ui-preview.cjs --scene flow-ai --output docs/previews/flow-ai.svg
 ```
 
-**119 tests**:22 model,26 protocol,39 feedback-state,32 actual-TOC WoW/UI/input/audio mocks, retaining all74 baseline checks including stage controls, stale-residue and building details. **11 Lua files** parse as Lua5.1 grammar; **Fengari executes Lua5.3 semantics**, not native WoW Lua. Single AI clears four moving bosses in100.8 simulated seconds; five AI in50.8s Co-op/85.2s Brawl; separate fixtures prove AI harm/KO. Source-derived mock previews are labelled **not WoW screenshots**. See [QA.md](QA.md) for what was actually checked and remaining native tests.
+Fengari executes Lua5.3 semantics; separate Lua5.1 grammar checks do not equal native WoW execution. Actual-UI previews are explicitly labelled mocks. Final exact test counts, migration/AI measurements, packaging and remaining manual checks belong in [QA.md](QA.md). No native graphics/focus/taint, live two-client/raid performance or subjective animation-feel claim is implied.
 
 Repository: https://github.com/lemillermicrosoft/Rampage
