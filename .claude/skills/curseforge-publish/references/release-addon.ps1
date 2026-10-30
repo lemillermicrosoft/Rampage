@@ -86,14 +86,23 @@ try {
     }
     if (-not $SkipGit) {
         Write-Host "==== [release-addon] Git ====" -ForegroundColor Cyan
-        $status = (git status --porcelain) -join "`n"
-        if ($status) {
+        # Release generation owns only tracked TOC/Lua version changes and the
+        # generated changelog. Never stage unrelated untracked files (for example
+        # Explorer Thumbs.db in a preserved primary checkout).
+        $status = (git status --porcelain --untracked-files=no) -join "`n"
+        if ($LASTEXITCODE -ne 0) { throw 'Release status inspection failed' }
+        $newNotes = Test-Path -LiteralPath $changelogPath
+        if ($status -or $newNotes) {
             if ($DryRun) {
                 Write-Host "[release-addon] DryRun: would commit:" -ForegroundColor Yellow
                 Write-Host $status
             } else {
-                git add -A | Out-Null
-                if ($LASTEXITCODE -ne 0) { throw 'git add failed' }
+                git add -u | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw 'Tracked release staging failed' }
+                if ($newNotes) {
+                    git add -- CHANGELOG_RELEASE.md | Out-Null
+                    if ($LASTEXITCODE -ne 0) { throw 'Release changelog staging failed' }
+                }
                 git commit -m ("chore(release): {0} {1}" -f $addon, $tag) | Out-Null
                 if ($LASTEXITCODE -ne 0) { throw 'Release commit failed' }
             }

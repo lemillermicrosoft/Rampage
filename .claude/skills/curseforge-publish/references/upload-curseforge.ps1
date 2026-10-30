@@ -95,7 +95,7 @@ if (-not $DisplayName) { $DisplayName = [IO.Path]::GetFileNameWithoutExtension($
 if (-not $Changelog) {
     $changelogPath = Join-Path $RepoRoot "CHANGELOG_RELEASE.md"
     if (Test-Path -LiteralPath $changelogPath) {
-        $Changelog = Get-Content -LiteralPath $changelogPath -Raw
+        $Changelog = Get-Content -LiteralPath $changelogPath -Raw -Encoding UTF8
     } else {
         $Changelog = "Release $DisplayName"
     }

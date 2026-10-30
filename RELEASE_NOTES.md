@@ -1,43 +1,40 @@
-## Roaming bosses with visible attacks
+## Brawl flow, safer host succession and varied AI
 
-For **WoW Burning Crusade Classic2.5.6 / Interface20506**. This publishes the reviewed moving-boss feature from PR #8 plus its narrow pre-publication stale-render cue fix. The owner authorized this release on October29,2026. Unique/different level layouts are later work, **not included**.
+For WoW Burning Crusade Classic 2.5.6 / Interface 20506. The owner approved publishing the installed b98c93c playtest on October 30, 2026 after positive in-game feedback. This release preserves that gameplay; only the release version and documentation change.
 
-### Upgrade both machines together
+### Upgrade every participant together
 
-**Every participant needs the same new versioned release. R4 is incompatible with v0.3.0/R3 and older protocols.** Use the attached release ZIP, not a head-labelled playtest archive. Extract its single `Rampage` folder into `Interface/AddOns`, without double nesting, and safely `/reload` when ready.
+All players need this R5 release. Published v0.4.0 uses R4 and cannot participate. The reviewed b98c93c candidate already uses the same R5 gameplay, but use the versioned release ZIP for a coordinated installation. Extract its single Rampage folder into Interface/AddOns without double nesting; safely reload when ready and out of combat.
 
-The owner's existing linked checkout is advanced to this approved release and left there. No junction swap, forced reload or external SavedVariables edits are performed. Do not extract over that junction; the other machine installs the same versioned ZIP. Earlier releases and candidate archives remain preserved for rollback.
+The owner's local installation remains the tested frozen b98c93c candidate during publication; publishing does not relabel or overwrite those files. No forced reload or external SavedVariables edit. The primary checkout advances to the published release. An older rollback junction pointing to that primary checkout therefore follows the updated release, not v0.4.0; preserved v0.4.0 ZIP/frozen files are the actual old-version rollback.
 
-### Boss movement and attacks
+### UI and participation
 
-- Bosses really patrol ground lanes2–6, at most two lanes in five seconds. A **shared authoritative position** drives punch reach, AI pursuit and visible location; no stationary3–5 ghost hitbox. After flattening the city, hit the exposed boss **on the ground within one lane** of its actual position. The gold bracket follows its reach. No body-contact damage.
-- Cycle: **5s patrol →7s locked windup →one impact /0.5s attack →5s stationary recovery**. Targets and attack origin lock before the warning, never track later dodges. At least four safe lanes remain. Recovery gives players time to catch and punch the boss.
-- **Crumb Baron:** reflected stroll and one-column crumb throw, all heights.
-- **Permitron9000:** two-lane march and adjacent-column beam, all heights.
-- **Snack Tax:** nearest-actor pursuit and adjacent ground stomp. **Ground only**; climbing can avoid it.
-- **Queuezilla:** alternating strides and three adjacent warned columns striking **together**, all heights.
-- Visible moving shield, patrol/windup/release/recovery poses and pooled original throw/beam/stomp/barrage cues show the actual attack origin. Clients never apply damage from animation.
-- Clients smooth only the known patrol segment, stopping at its endpoint and freezing when paused/stale. No future route/attack prediction. A timely confirmed recovery may show short static impact residue at already-known targets, never a late projectile or damage replay.
+- Compact city-first layout, separate INFO and SETTINGS, and Mouse/Keyboard selectors reflecting actual capture. Opening panels and safety events release keyboard capture without silently taking it back.
+- Normal UI and ordinary commands create Brawl rooms. Opening the window may automatically watch an available Brawl room, without an avatar or keys; Join fight requires explicit consent. Leave fight returns to watching; closing retains membership, while explicit Leave suppresses automatic rejoin.
+- The legacy Co-op engine remains unchanged for compatibility/testing; normal UI does not create or casually join a Co-op fight or silently convert an existing room.
+- Confirmed local damage is YOU; sampled shared damage is TEAM, never an invented remote per-hit combat log. Reduced motion retains static truthful feedback. Same-ID bot replacement entirely between ordinary snapshots remains indistinguishable for cosmetics.
 
-### Building details restored
+### Bosses and AI
 
-The earlier warm building detail is back: bright multi-pane windows, crossbars, sills, roof/cornice trim and subtle brick seams. Explicit draw layers keep walls behind panes/trim instead of relying on creation order, and damaged floors keep readable lit windows instead of fading them almost away. This is a bounded visual restoration, not new level themes or gameplay.
+- Actual boss cycle is 3s patrol + SEVEN-SECOND locked warning + 0.5s impact + 3s recovery = 13.5s. The future request for a maximum three-second warning is NOT included in this release.
+- Five AI automatically mix Smasher, Chaser, Scrapper and Dodger profiles, distinct targets and legal cadences; the fifth Smasher has an eastern objective bias. AI obey ordinary movement, range, damage, vulnerability and cooldown rules. AI can never become host.
+- Up to 25 actors including five AI, with up to 40 real participants including watchers. Human fighters replace filler AI first. Real combat safety and optional audio-off-by-default behavior remain.
 
-### Review fix included
+### Host succession and honest limits
 
-An old warning sample could become stale while no frames rendered, then incorrectly show confirmed-impact residue when a delayed consecutive recovery arrived. The UI now checks **previous sample age before replacing its timestamp**, even without an intermediate render. More than2.5s suppresses late residue and clears the stale visual baseline; normal timely confirmation and the exact2.5s boundary remain unchanged. This is presentation-only; no gameplay/schema/latency change.
+Host ordering uses longest continuously admitted real participant, including watchers. Leaving/rejoining gets a new ordinal; changing role or closing the window does not. An ordinary host Leave transfers a complete checkpoint without restarting the match; a promoted watcher need not become a fighter.
 
-### Existing controls and multiplayer preserved
+Recovery is NOT instant. Measured small graceful handoff: 5.3s. Forty-participant graceful handoff with loss/reordering: 31.5s plus 5s settling = 36.5s. Forty-participant crash: 36.4s plus 8s convergence = 44.4s. Crash adoption can roll back uncommitted world, HP and score. These are deterministic transport measurements, not guaranteed native latencies.
 
-- **Selected keyboard or mouse mode persists across ordinary level transitions.** Held inputs are cleared and require release/fresh press next city. Escape/close/leave/chat/focus/modifiers/real combat still release capture, with no automatic recapture. KO/victory behavior unchanged.
-- Default **Co-op**, explicitly opted-in **Brawl**,100HP,20-damage punches,35-damage boss impacts,4s KO/respawn and3s spawn immunity retained.
-- Host/solo can add/remove up to **five AI within25 actors**; real humans displace filler AI first. **40 real participants** including spectators, separate from AI. Spectators remain read-only and immune. Host combat pauses movement/warnings/recovery; guest protection is reconciled before known damage.
-- Optional local BlasterMaster audio remains **OFF by default**. No copied external audio/art or global volume changes.
+Insufficient matching checkpoints, admitted-voter quorum or safe membership evidence pauses rather than running two authorities. Native roster absence cannot revoke an outstanding vote. A true client process restart forgets volatile lineage and may require a fresh room when too few old members remain, especially a two-person room. This is not perfect partition consensus or Byzantine anti-cheat. Checkpoint evidence expires after 120s.
 
-### Quick start and confidence limits
+### Verification and first checks
 
-`/rampage solo` →Add AI→PLAY. Watch a full patrol/windup/attack/recovery cycle, flatten the city, then chase the moving boss and hit inside its bracket. Start with two clients on the same release in one PARTY/RAID before scaling.
+174 automated checks passed: 37 model, 53 protocol/migration, 40 feedback, 36 actual-TOC UI and 8 real-adapter flow; 12 Lua 5.1 grammar checks and zero dependency audit findings. Full tests run again against the final version-bumped runtime before publication. Execution uses Fengari Lua 5.3 semantics, not native WoW.
 
-**74 automated checks** (22 model,26 protocol,26 actual-TOC WoW/UI/input/audio mocks),9 Lua5.1 grammar checks and zero dependency audit findings. The new no-intermediate-render regression was demonstrated failing before the fix and passing afterward. Building checks verify explicit draw layers/sublevels and intact/damaged window visibility; fixed object pools remain stable after500 renders. Independent baseline review also exercised28,000 off-grid world round trips. Execution uses Fengari Lua5.3 semantics, not native WoW.
+The 40-node loss test demonstrates a unique unpaused successor advancing its clock. Delayed-vote/rejoin, fresh-process, asymmetric roster and witness-lock regressions pass. Both graceful and crash checkpoints preserve 1,200 exact AI decisions across 24s. Sustained 40-node play measured 677 charged bytes/s and 3.91 host messages/s; initial admission burst averages are not claimed as sustained-rate success.
 
-**Authoritative worlds still arrive every1.25s; no prediction.** Seven-second warnings exceed the tested4s maximum gap but are not a guarantee under arbitrary network loss. Remote countdowns and hit feedback can lag; dodge early. Some0.5s attack frames can fall between snapshots. This is friendly/nonprecision play, not competitive network fighting. Native rendering/fonts/scaling, keyboard focus/taint, real two-client response, optional audio and large live raids remain manual checks. See QA.md for evidence and limitations.
+Owner in-game feedback is positive, but it does not certify two-client/large-raid behavior. Native keyboard focus, rendering/alignment, scaling/taint, optional audio and real PARTY/RAID transport remain manual checks. Start with solo plus five AI, then two clients on the same release before scaling.
+
+Follow-up only: shorter boss warnings, control/radio styling and alignment polish. Blizzard assets or a comparison toggle remain deferred and are not part of this release.

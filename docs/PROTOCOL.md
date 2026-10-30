@@ -2,11 +2,11 @@
 
 ## Compatibility and boundary
 
-This is the **unreleased UI-flow/host-succession/AI-profile candidate in PR #11**, extending issues #10/#12. Wire version is **R5**, not compatible with publishedv0.4.0/R4 or the earlier `eef148f` feedback candidate. The TOC/app version remains0.4.0 until publication is separately authorized. Matching display version is not matching protocol. Every test participant must install the same new candidate.
+This is the **owner-approved R5 release from PR #11**, covering issues #10/#12. Every player must upgrade from publishedv0.4.0/R4 or the earlier `eef148f` candidate. The approved b98c93c candidate already uses this same R5 gameplay despite its old displayed version; prefer the versioned release ZIP for coordinated installs.
 
 Transport remains `ToastRampage1` addon messages over normal PARTY/RAID in one real group. Actual roster sender names are canonical Player-Realm identities. No guild-wide, instance-chat, independent-party bridge, external authority server, cryptographic authentication or Byzantine/competitive anti-cheat service is claimed. Correlation tokens/digests are not secrets/signatures. All input, membership and authority packets must pass actual sender/room/term/context validation.
 
-Primary checkout remains on publishedv0.4.0. The owner separately authorized local installation at13:22: use a frozen head-labelled ZIP extraction, not a live edited branch, and reversibly repoint only the anniversary addon junction with installed-file hash verification. The separate install receipt records completion. No release, forced reload, other-PC access or SavedVariables changes.
+Owner authorized publication Oct30 at13:59. Primary main advances to the versioned release; the actual addon junction remains on frozen b98c93c during publishing. No forced reload, other-PC access or SavedVariables changes. Old rollback links to primary follow its updated main; use the preserved v0.4.0 archive/frozen runtime for old-version rollback. The release retains seven-second warnings; subsequent max-three-second tuning is separate.
 
 ## Distinct identities and capacities
 

@@ -4,9 +4,11 @@
 
 This extends PR #11 / issues #10 and #12 on `feat/issue-10-hit-feedback`, based on previous reviewed candidate `eef148fdb21acb4c468c36166b15e92af651d7e4`. Sole edited checkout: `C:\Users\leroy\repos\Rampage-hit-feedback`.
 
-**Not merged or published. Local installation separately authorized Oct30 at13:22:** “Please do make sure the latest in installed for me to test.” Primary `C:\Users\leroy\repos\Rampage` remains clean main at `5ec13435deda1244c9bfbe63735777fe4af2de7b` /publishedv0.4.0. Before authorized deployment, the actual anniversary AddOns/Rampage junction was independently verified pointing there. Deployment stages the final verified ZIP into frozen runtime, preserves the original junction as rollback, switches only that addon junction and compares every installed file hash. The task's installation receipt records actual completion/old/new targets. Old worktrees, released ZIP and the earlier72,803-byte feedback ZIP remain preserved. No forced reload, external SavedVariables edit, other-PC access, release tooling/config/workflow/installed-skill change, Discord action or CurseForge polling/upload.
+**Owner-authorized release, Oct30 at13:59:** positive in-game feedback followed by "I think we can publish this version." This release preserves approved installed b98c93c gameplay and its seven-second boss warning. The later maximum-three-second warning and control/alignment work are separate; Blizzard assets remain deferred.
 
-**Wire R5 requires matching new candidates on all testers**, despite the unchanged TOC/app display0.4.0. Publishedv0.4.0 and the earlier feedback candidate use R4 and cannot join this build. Co-op code remains internal; public paths expose Brawl, never silently convert a room.
+The final versioned runtime is fully tested before tag/upload. The primary main checkout advances to the release while its unrelated untracked Explorer `docs/previews/Thumbs.db` remains untouched. No source/gameplay edits beyond version synchronization. The owner's actual anniversary addon junction stays on the frozen b98c93c candidate; publication does not relabel it. Old ZIPs and worktrees remain. An old rollback junction targeting primary now follows the new main; use the preserved v0.4.0 ZIP/frozen runtime for actual old-version rollback. No forced reload, SavedVariables edit, other-PC access or unrelated configuration changes.
+
+**Wire R5 requires every player to upgrade from v0.4.0/R4.** The b98c93c candidate already uses the same R5 gameplay, but the versioned release ZIP is the coordinated distribution. Co-op code remains internal; public paths expose Brawl and never silently convert a room. Owner live feedback is not proof of two-client/full-raid, native focus/taint or every rendering configuration.
 
 ## What was checked locally
 
@@ -130,4 +132,4 @@ Membership uses admitted voters rather than uninstalled/unopened native raid mem
 - [ ] Host Leave: wait through visible transfer pause; oldest admitted watcher/fighter becomes host without forced avatar. Check other scores/HP/AI continue. Test crash only with rollback expectations; do not assume instantaneous/always-available recovery.
 - [ ] Test group roster changes, party↔raid/subgroup routing, native fonts/scaling/focus/taint, optional audio and real latency before larger raids.
 
-New release approval remains required. Parent verifies the local installation receipt and notifies the owner when the combined head-labelled candidate is safe to reload/playtest. Local install is explicitly authorized; publication and forced reload are not.
+Publication of this identified build was explicitly authorized Oct30 at13:59. Parent verifies final tag, GitHub downloaded-asset hash and CurseForge upload receipt separately from public approval, then delivers release links. Future feature changes need a separate candidate; no forced reload or silent installed-file replacement.

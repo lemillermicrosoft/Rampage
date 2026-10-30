@@ -2,17 +2,19 @@
 
 **<Toast>'s pocket raid-break arcade.** Original monsters smash a shared city, then flatten four fictional bosses. For **TBC Classic 2.5.6 / Interface20506**. Original art inspired by classic climb-and-smash play; no affiliation with the original Rampage game's owners.
 
-## Brawl-first playtest — unreleased R5
+## Brawl-first R5 release
 
-The current PR #11 iteration combines confirmed hit feedback ([#10](https://github.com/lemillermicrosoft/Rampage/issues/10)) with a polished city-first UI, INFO/SETTINGS panels, Mouse/Keyboard selection, automatic watching, host succession, faster boss cycles and varied AI profiles ([#12](https://github.com/lemillermicrosoft/Rampage/issues/12)). Unique levels remain deferred.
+The owner-approved PR #11 release combines confirmed hit feedback ([#10](https://github.com/lemillermicrosoft/Rampage/issues/10)) with a polished city-first UI, INFO/SETTINGS panels, Mouse/Keyboard selection, automatic watching, host succession, faster boss cycles and varied AI profiles ([#12](https://github.com/lemillermicrosoft/Rampage/issues/12)). Unique levels remain deferred.
 
-**All participants need this same head-labelled R5 candidate.** R5 is incompatible with publishedv0.4.0/R4 and the earlier `eef148f` feedback candidate. The displayed TOC/app version remains0.4.0 because this is a playtest, not a versioned release; that display does not establish protocol compatibility.
+**Upgrade every participant to this R5 release.** R5 is incompatible with v0.4.0/R4 and the earlier `eef148f` feedback candidate. The approved `b98c93c` playtest already uses the same R5 gameplay but has an old displayed version; prefer the versioned release ZIP for coordinated installs.
 
-**Unreleased local playtest; not a public release.** The owner explicitly authorized local installation at13:22 onOct30. The installation procedure stages the verified ZIP into a frozen head-labelled runtime directory, reversibly repoints only this PC's anniversary AddOns/Rampage junction, and verifies installed-file hashes. The primary checkout stays clean on publishedv0.4.0; do not extract through the old junction or edit that checkout. Keep the stable release and earlier ZIPs for rollback. The separate installation receipt records whether the junction switch actually completed; these packaged docs alone are not installation proof. No automatic reload or installation on another machine. Fresh approval is required to merge/tag/upload; previous publication approval was consumed byv0.4.0.
+The owner explicitly authorized publishing this build on October30,2026 after positive in-game feedback. Publication advances the primary release checkout, but the owner's addon junction stays on the separately verified frozen `b98c93c` candidate; publication alone does not relabel those installed files. No forced reload or SavedVariables edits. Do not extract through a linked development checkout. Preserved v0.4.0 ZIP/frozen runtime provides rollback: an old junction pointing to primary main now follows the new release, not v0.4.0. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for release behavior and caveats.
+
+**Not included:** the subsequent request for a maximum three-second boss warning, radio/control styling or alignment polish. This release retains the tested seven-second warning. Blizzard asset/comparison-toggle work remains deferred.
 
 ## Start playing
 
-1. After choosing a coordinated candidate installation, type **`/rampage`**. In a PARTY/RAID, opening automatically watches an available Rampage room. Watching creates **no avatar, damage target or captured keyboard**.
+1. After installing the same release on every participant, type **`/rampage`**. In a PARTY/RAID, opening automatically watches an available Rampage room. Watching creates **no avatar, damage target or captured keyboard**.
 2. Click **Join fight** to explicitly enter **BRAWL / PvP**. **Leave fight** returns to watching without leaving the room. A full fight keeps you watching; a seat becoming free never auto-joins you.
 3. Choose **Mouse** for the compact action buttons or **Keyboard** for WASD/arrows +Space. Keyboard selection is explicit and shows actual capture state. Escape releases keys back to Mouse; there is no automatic recapture.
 4. If no room exists, choose **Host Brawl**, then Start. **Solo practice** or `/rampage solo` starts local Brawl without requiring a group. Solo and hosting do not automatically capture keys.
